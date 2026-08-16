@@ -1,0 +1,79 @@
+{
+  "name": "abmbuddy",
+  "version": "0.1.0",
+  "description": "Open-source agentic account research and outreach for HubSpot. CLI-first, no infrastructure.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "abmbuddy": "dist/cli/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "dev": "tsx src/cli/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/cli/index.js"
+  },
+  "keywords": [
+    "abm",
+    "account-based-marketing",
+    "hubspot",
+    "crm",
+    "ai-agents",
+    "sales-intelligence",
+    "cli",
+    "outreach",
+    "research"
+  ],
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.39",
+    "@ai-sdk/google": "^4.0.44",
+    "@ai-sdk/openai": "^4.0.42",
+    "@ai-sdk/openai-compatible": "^3.0.30",
+    "@hubspot/api-client": "^14.0.1",
+    "@inquirer/prompts": "^8.5.2",
+    "ai": "^7.0.66",
+    "cheerio": "^1.1.2",
+    "commander": "^15.0.0",
+    "log-update": "^7.0.0",
+    "open": "^11.0.1",
+    "picocolors": "^1.1.1",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "author": "Saprative Jana <saprative@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saprative/abmbuddy.git"
+  },
+  "homepage": "https://github.com/saprative/abmbuddy#readme",
+  "bugs": {
+    "url": "https://github.com/saprative/abmbuddy/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
