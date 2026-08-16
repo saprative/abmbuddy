@@ -10,6 +10,7 @@ import { runConfigCommand, showConfig } from "./config.js";
 import { runInteractive } from "./interactive.js";
 import { loginHubSpot, logoutHubSpot } from "./login.js";
 import { runResearch } from "./research.js";
+import { runSkillCommand } from "./skill.js";
 import { pc, symbols } from "./ui/theme.js";
 
 // The AI SDK logs provider warnings straight to the console, which would cut
@@ -99,6 +100,28 @@ program
   .action(async (provider: string) => {
     assertHubSpot(provider);
     await logoutHubSpot();
+  });
+
+program
+  .command("skill")
+  .description("Install the ABMBuddy skill into your coding agents (Claude Code, Codex, Antigravity, …)")
+  .argument("[action]", "install or remove", "install")
+  .option("--agents <ids>", "comma-separated agent ids, e.g. claude,codex,antigravity")
+  .option("--all", "every supported agent")
+  .option("--global", "install for every project on this machine")
+  .option("--project", "install into the current project only")
+  .option("--dry-run", "show what would be written without writing it")
+  .option("-y, --yes", "no prompts")
+  .action(async (action: string, options: Record<string, unknown>) => {
+    const scope = options.project ? "project" : options.global ? "global" : undefined;
+    process.exitCode = await runSkillCommand({
+      ...(typeof options.agents === "string" ? { agents: [options.agents] } : {}),
+      ...(options.all ? { all: true } : {}),
+      ...(scope ? { scope } : {}),
+      ...(action === "remove" ? { remove: true } : {}),
+      ...(options.dryRun ? { dryRun: true } : {}),
+      ...(options.yes ? { yes: true } : {}),
+    });
   });
 
 program

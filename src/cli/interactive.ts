@@ -5,6 +5,7 @@ import type { LlmProviderName } from "../config/index.js";
 import { ensureLlmConfigured, runConfigCommand, showConfig } from "./config.js";
 import { isHubSpotConnected, loginHubSpot } from "./login.js";
 import { runResearch } from "./research.js";
+import { offerSkillInstall, runSkillCommand } from "./skill.js";
 import { pc, symbols } from "./ui/theme.js";
 
 /**
@@ -32,8 +33,11 @@ export async function runInteractive(): Promise<number> {
   }
 
   const config = await loadConfig(true);
-  if (!isLlmConfigured(config) || !(await resolveApiKey(config.llm.provider as LlmProviderName))) {
+  const firstRun = !isLlmConfigured(config) || !(await resolveApiKey(config.llm.provider as LlmProviderName));
+  if (firstRun) {
     await ensureLlmConfigured();
+    // Only offered once, at the end of setup, and easy to decline.
+    await offerSkillInstall();
   }
 
   while (true) {
@@ -43,12 +47,14 @@ export async function runInteractive(): Promise<number> {
         ? [
             { name: "Research accounts", value: "research" },
             { name: "Research a domain", value: "domain" },
+            { name: "Set up coding agents", value: "skill" },
             { name: "View configuration", value: "config" },
             { name: "Reconnect HubSpot", value: "reconnect" },
             { name: "Exit", value: "exit" },
           ]
         : [
             { name: "Research a domain", value: "domain" },
+            { name: "Set up coding agents", value: "skill" },
             { name: "Connect HubSpot", value: "reconnect" },
             { name: "View configuration", value: "config" },
             { name: "Exit", value: "exit" },
@@ -64,6 +70,8 @@ export async function runInteractive(): Promise<number> {
         validate: (value) => (value.trim() ? true : "Enter a domain or company name"),
       });
       await runResearch({ targets: [target.trim()] });
+    } else if (action === "skill") {
+      await runSkillCommand({});
     } else if (action === "config") {
       await runConfigCommand();
     } else if (action === "reconnect") {

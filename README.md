@@ -257,6 +257,50 @@ Then, if HubSpot is connected:
 
 ---
 
+## Teach your coding agent to use it
+
+ABMBuddy ships an **agent skill** — one document that teaches a coding agent how
+to drive the CLI: run it non-interactively, read the JSON, keep hypotheses
+hedged, cite evidence, and never write to your CRM uninvited.
+
+Setup offers to install it, or do it any time:
+
+```bash
+abmbuddy skill install                      # pick agents interactively
+abmbuddy skill install --all                # every supported agent
+abmbuddy skill install --agents claude,codex
+abmbuddy skill install --project            # this repo only, instead of your machine
+abmbuddy skill install --dry-run            # show what would be written
+abmbuddy skill remove --all                 # take it back out
+```
+
+One skill, written to wherever each platform actually looks:
+
+| Agent | Global | Project |
+| --- | --- | --- |
+| Claude Code | `~/.claude/skills/abmbuddy/SKILL.md` | `.claude/skills/abmbuddy/SKILL.md` |
+| Codex CLI | `~/.codex/AGENTS.md` | `AGENTS.md` |
+| Antigravity | `~/.gemini/GEMINI.md` | `.agents/rules/abmbuddy.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` | `GEMINI.md` |
+| Cursor | — | `.cursor/rules/abmbuddy.mdc` |
+| Windsurf | — | `.windsurf/rules/abmbuddy.md` |
+| GitHub Copilot | — | `.github/copilot-instructions.md` |
+| Anything reading AGENTS.md | — | `AGENTS.md` |
+
+Agents you already use are detected and pre-selected.
+
+**Shared files are never overwritten.** Where a platform uses a file you also
+write in — `AGENTS.md`, `GEMINI.md`, `copilot-instructions.md` — the skill goes
+in as a delimited block between markers. Re-installing replaces that block and
+nothing else; removing takes it out and leaves your content byte for byte.
+Targets that share a file are written once.
+
+After installing, you can just ask your agent:
+
+> Research datadoghq.com and tell me whether there's a reason to reach out.
+
+---
+
 ## Using it without HubSpot
 
 Research any company from the command line. This needs nothing but an AI key:
@@ -282,6 +326,7 @@ abmbuddy research --query "fintech"   # filter the portal server-side
 abmbuddy research --json > out.json   # structured output for scripts
 abmbuddy research --product "Deploy"  # position the run around a HubSpot product
 abmbuddy research --save ./collateral # write generated one-pagers to disk
+abmbuddy skill install                # teach your coding agents to use the CLI
 abmbuddy config                       # view and change settings
 abmbuddy config --show                # print settings and exit
 abmbuddy --verbose research           # detailed logs on stderr
@@ -521,6 +566,7 @@ src/
 ├── llm/            model provider abstraction
 ├── search/         search provider abstraction
 ├── models/         Company, Evidence, AccountResearch
+├── skills/         the agent skill and its per-platform installer
 ├── config/         config file and OS keychain secrets
 └── util/           http, html, browser fallback, logging, pooling
 ```
