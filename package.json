@@ -1,6 +1,6 @@
 {
   "name": "abmbuddy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open-source agentic account research and outreach for HubSpot. CLI-first, no infrastructure.",
   "type": "module",
   "license": "MIT",
