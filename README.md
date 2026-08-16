@@ -558,7 +558,14 @@ not exist, then writes six concise properties:
 | ABMBuddy Product | The product the research was positioned around |
 
 Scraped documents are never written to HubSpot. The raw evidence lives in memory
-for the duration of the run and is then gone.
+for the duration of the run and is then gone; each field is capped at 2,000
+characters so the record stays readable.
+
+The property group and its properties are created on first write-back if they
+do not exist, and reused afterwards — repeat runs update values in place rather
+than adding anything new. Write-back needs `crm.objects.companies.write` and
+`crm.schemas.companies.write`; ABMBuddy checks at login and tells you if either
+is missing.
 
 ---
 
