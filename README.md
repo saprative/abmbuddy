@@ -49,7 +49,7 @@ Requires **Node 20.11 or newer**. Check with `node --version`.
 | | Required? | Notes |
 | --- | --- | --- |
 | An AI provider key | **Yes** | OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint (including a local model, which needs no key) |
-| HubSpot access | No | Only if you want to research CRM accounts and write results back. Without it, research any domain directly |
+| A HubSpot service key | No | Only if you want to research CRM accounts and write results back. Without it, research any domain directly |
 | A web search key | No | Tavily, Brave or Serper. Without one, news falls back to headlines and leadership content is skipped |
 
 ---
@@ -86,27 +86,57 @@ this project, never in the config file.
 
 ### 2. Connect HubSpot (optional)
 
-Two ways, both fine. ABMBuddy asks which you want.
+**Service key — recommended.** An account-level API credential you create in
+Settings. There is no app to build, no client secret, and no OAuth round trip.
 
-**Private app token — fastest.** In HubSpot: Settings → Integrations → Private
-apps → Create a private app. On the Scopes tab tick these four, create the app,
-and paste the token when asked:
+1. HubSpot → **Development** → **Keys** → **Service keys** → **Create service key**
+2. Name it, click **Add new scope**, and tick these four:
+   ```
+   crm.objects.companies.read
+   crm.objects.companies.write
+   crm.schemas.companies.read
+   crm.schemas.companies.write
+   ```
+3. **Update** → **Create**, then **Show** and **Copy** the key.
+4. Paste it when ABMBuddy asks.
 
-```
-crm.objects.companies.read
-crm.objects.companies.write
-crm.schemas.companies.read
-crm.schemas.companies.write
-```
+You need to be a super admin, or have the developer tools access permission.
+Keys can be rotated or revoked from the same screen at any time.
 
-**OAuth — opens your browser.** Create an app at
+> Service keys are in HubSpot **public beta** (since February 2026) and, in
+> HubSpot's words, "subject to change based on testing and feedback". They are
+> the modern replacement for legacy private apps. If your portal does not have
+> them yet, use a private app token instead — ABMBuddy accepts either.
+
+**Private app token — the legacy equivalent.** HubSpot → Settings →
+Integrations → Private apps → Create a private app, tick the same four scopes,
+and copy the access token. Legacy private apps are still fully supported by
+HubSpot.
+
+**OAuth — for teams.** Create an app at
 [developers.hubspot.com](https://developers.hubspot.com), add
 `http://localhost:8787/oauth/callback` as its redirect URL, and paste the client
 ID and secret. ABMBuddy opens your browser, completes the exchange on a loopback
-listener, and refreshes the token automatically from then on.
+listener, and refreshes the token automatically from then on. Worth it when
+several people share one app or you want auto-refreshing tokens.
 
-You can also skip the prompts entirely by setting `HUBSPOT_ACCESS_TOKEN` in your
-environment.
+ABMBuddy verifies whatever you give it at login — a wrong or under-scoped
+credential fails immediately with the list of missing scopes, rather than
+throwing a 403 halfway through a run.
+
+#### Non-interactive (scripts and CI)
+
+Skip the prompts entirely:
+
+```bash
+export HUBSPOT_ACCESS_TOKEN=pat-na1-...        # service key or private app token
+abmbuddy research --hubspot --all --yes
+
+# or store it in the OS keychain once, without a prompt:
+abmbuddy login hubspot --token pat-na1-...     # visible in shell history
+abmbuddy login hubspot --token-file ./key.txt  # safer
+echo "$HUBSPOT_KEY" | abmbuddy login hubspot --token-stdin   # safest
+```
 
 ### 3. Research some accounts
 
@@ -190,7 +220,8 @@ npx abmbuddy research stripe.com datadoghq.com snowflake.com
 
 ```bash
 abmbuddy                              # interactive
-abmbuddy login hubspot                # connect a CRM
+abmbuddy login hubspot                # connect a CRM (service key, token or OAuth)
+abmbuddy login hubspot --token <key>  # non-interactive; also --token-file / --token-stdin
 abmbuddy logout hubspot               # disconnect and delete stored credentials
 abmbuddy research                     # pick accounts from HubSpot
 abmbuddy research stripe.com          # research a domain, no CRM needed
@@ -314,7 +345,7 @@ the outreach comes from, and research limits:
 ```
 Configuration
 ────────────────────────────────────────────────────────────
-CRM            ✓ HubSpot — private app token · portal 12345678
+CRM            ✓ HubSpot — service key / token · portal 12345678
 AI provider    Anthropic · claude-sonnet-5
 AI key         sk-a••••••1f9c
 Web search     Tavily

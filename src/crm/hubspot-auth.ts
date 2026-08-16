@@ -8,13 +8,15 @@ import { log } from "../util/logger.js";
 import { CrmAuthError } from "./provider.js";
 
 /**
- * HubSpot credentials. Two honest options:
+ * HubSpot credentials. Two mechanisms:
  *
- *   oauth        — you create a HubSpot app, we open your browser, HubSpot
- *                  redirects to localhost, we exchange the code and refresh
- *                  the token from then on.
- *   private-app  — you paste a private app access token. No browser, no app
- *                  registration, no refresh.
+ *   token  — a bearer credential you paste or pass in. This covers HubSpot
+ *            *service keys* (account-level, created in Settings, no app to
+ *            build — public beta since February 2026) and legacy private app
+ *            tokens. Both authenticate identically, so ABMBuddy treats them as
+ *            one mode: no browser, no client secret, no refresh.
+ *   oauth  — you create a HubSpot app, we open your browser, HubSpot redirects
+ *            to localhost, we exchange the code and refresh from then on.
  *
  * Tokens live in the OS keychain (or a 0600 file when there is no keychain),
  * never in config.json and never in the repository.
@@ -28,8 +30,23 @@ export const HUBSPOT_SCOPES = [
   "crm.schemas.companies.write",
 ];
 
+/** What a token must carry to be useful. "oauth" is an OAuth-only scope. */
+export const REQUIRED_SCOPES = HUBSPOT_SCOPES.filter((scope) => scope !== "oauth");
+
+/**
+ * Scopes the token is missing. An empty list means it can do everything
+ * ABMBuddy needs; an empty `granted` list means HubSpot did not tell us, so we
+ * assume the best rather than blocking a working token.
+ */
+export function missingScopes(granted: string[] | undefined): string[] {
+  if (!granted?.length) return [];
+  const held = new Set(granted);
+  return REQUIRED_SCOPES.filter((scope) => !held.has(scope));
+}
+
 export type StoredTokens = {
-  mode: "oauth" | "private-app";
+  /** "token" is a service key or private app token; both are plain bearers. */
+  mode: "oauth" | "token";
   accessToken: string;
   refreshToken?: string;
   /** Epoch ms. Absent for private app tokens, which do not expire. */
@@ -39,7 +56,7 @@ export type StoredTokens = {
 
 export async function readTokens(): Promise<StoredTokens | undefined> {
   const envToken = process.env.HUBSPOT_ACCESS_TOKEN ?? process.env.ABMBUDDY_HUBSPOT_TOKEN;
-  if (envToken) return { mode: "private-app", accessToken: envToken };
+  if (envToken) return { mode: "token", accessToken: envToken };
   const raw = await getSecret(SecretKey.hubspotTokens);
   if (!raw) return undefined;
   try {
@@ -64,7 +81,7 @@ export async function getAccessToken(config: Config): Promise<string> {
   if (!tokens) {
     throw new CrmAuthError("Not connected to HubSpot. Run `abmbuddy login hubspot`.");
   }
-  if (tokens.mode === "private-app") return tokens.accessToken;
+  if (tokens.mode === "token") return tokens.accessToken;
   // Refresh a minute early so a long run never fails mid-flight.
   if (tokens.expiresAt && tokens.expiresAt - 60_000 > Date.now()) return tokens.accessToken;
   const refreshed = await refresh(tokens, config);
@@ -175,19 +192,85 @@ export async function runOAuthFlow(
   return { tokens, ...(portalId ? { portalId } : {}) };
 }
 
-/** Stores a pasted private app token after checking it actually works. */
-export async function connectPrivateApp(token: string): Promise<{ portalId?: string }> {
-  const portalId = await lookupPortalId(token);
-  await writeTokens({ mode: "private-app", accessToken: token });
+/**
+ * Stores a service key or private app token after checking it actually works.
+ * Verifying here means a bad or under-scoped key fails at login with a clear
+ * message, rather than 403-ing halfway through a run.
+ */
+export async function connectWithToken(
+  token: string,
+): Promise<{ portalId?: string; scopes?: string[]; missing: string[] }> {
+  const info = await inspectToken(token);
+  await writeTokens({ mode: "token", accessToken: token });
   await updateConfig({
     crm: {
       provider: "hubspot",
-      authMode: "private-app",
-      ...(portalId ? { portalId } : {}),
+      authMode: "token",
+      ...(info.portalId ? { portalId: info.portalId } : {}),
       connectedAt: new Date().toISOString(),
     },
   });
+  return {
+    ...(info.portalId ? { portalId: info.portalId } : {}),
+    ...(info.scopes ? { scopes: info.scopes } : {}),
+    missing: missingScopes(info.scopes),
+  };
+}
+
+export type TokenInfo = { portalId?: string; scopes?: string[]; appId?: string };
+
+/**
+ * Asks HubSpot what a token is and what it can do. Private app tokens and
+ * OAuth tokens are introspected by different endpoints, and neither is
+ * guaranteed to answer, so this degrades to a plain account lookup — enough to
+ * prove the token authenticates even when scopes stay unknown.
+ */
+export async function inspectToken(accessToken: string): Promise<TokenInfo> {
+  // Private app tokens can be introspected; service keys share the same `pat-`
+  // prefix but have no documented introspection endpoint, so this call is
+  // best-effort for them and falls through to the account lookup below.
+  // The bearer header is required for EU-hosted (`pat-eu`) tokens.
+  const isBearerToken = accessToken.startsWith("pat-");
+  const request = isBearerToken
+    ? fetch("https://api.hubapi.com/oauth/v2/private-apps/get/access-token-info", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ tokenKey: accessToken }),
+      })
+    : fetch(`https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(accessToken)}`);
+
+  try {
+    const response = await request;
+    // Only OAuth token introspection is authoritative about rejection; for
+    // `pat-` tokens the account lookup below is the real test.
+    if (!isBearerToken && (response.status === 401 || response.status === 403)) throw rejected();
+    if (response.ok) {
+      const data = (await response.json().catch(() => undefined)) as
+        | { hubId?: number; portalId?: number; scopes?: string[]; appId?: number }
+        | undefined;
+      const hub = data?.hubId ?? data?.portalId;
+      if (hub || data?.scopes) {
+        return {
+          ...(hub ? { portalId: String(hub) } : {}),
+          ...(data?.scopes ? { scopes: data.scopes } : {}),
+          ...(data?.appId ? { appId: String(data.appId) } : {}),
+        };
+      }
+    }
+    log.debug("hubspot", `token introspection unavailable (${response.status}); falling back`);
+  } catch (error) {
+    if (error instanceof CrmAuthError) throw error;
+    log.debug("hubspot", `token introspection failed: ${String(error)}`);
+  }
+
+  const portalId = await lookupPortalId(accessToken);
   return { ...(portalId ? { portalId } : {}) };
+}
+
+function rejected(): CrmAuthError {
+  return new CrmAuthError(
+    "HubSpot rejected that token. Check it is valid, not revoked, and has the companies read/write scopes.",
+  );
 }
 
 /** Also serves as a credential check: a bad token cannot read account info. */

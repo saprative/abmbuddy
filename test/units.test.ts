@@ -3,6 +3,7 @@ import test from "node:test";
 import { renderEvidence, renderEvidenceCatalog } from "../src/agents/context.ts";
 import { createPruneReport, filterIds, knownIds, pruneList, reportWarnings } from "../src/agents/validate.ts";
 import { buildProperties, PROPERTIES } from "../src/crm/summary.ts";
+import { REQUIRED_SCOPES, missingScopes } from "../src/crm/hubspot-auth.ts";
 import { companySlug, normalizeDomain } from "../src/models/company.ts";
 import { makeEvidence, resetEvidenceIds, truncateContent } from "../src/models/evidence.ts";
 import type { AccountResearch } from "../src/models/research.ts";
@@ -138,4 +139,20 @@ test("HubSpot write-back stays concise and only sends known properties", () => {
   assert.ok(properties.abmbuddy_top_hypothesis?.includes("https://jobs.test/1"));
   // Scraped page content never goes to the CRM.
   for (const value of Object.values(properties)) assert.ok(value.length <= 2000);
+});
+
+test("service key scope checking reports gaps without blocking unknown scopes", () => {
+  // HubSpot tells us the scopes for a private app token, but service keys have
+  // no introspection endpoint — an unknown scope list must not fail a good key.
+  assert.deepEqual(missingScopes(undefined), []);
+  assert.deepEqual(missingScopes([]), []);
+
+  assert.deepEqual(missingScopes(REQUIRED_SCOPES), []);
+  assert.deepEqual(missingScopes([...REQUIRED_SCOPES, "crm.objects.contacts.read"]), []);
+
+  assert.deepEqual(missingScopes(["crm.objects.companies.read"]), [
+    "crm.objects.companies.write",
+    "crm.schemas.companies.read",
+    "crm.schemas.companies.write",
+  ]);
 });

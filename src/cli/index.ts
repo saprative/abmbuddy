@@ -70,9 +70,16 @@ program
   .command("login")
   .description("Connect a CRM")
   .argument("[provider]", "crm provider", "hubspot")
-  .action(async (provider: string) => {
+  .option("--token <token>", "private app service token (non-interactive)")
+  .option("--token-file <path>", "read the service token from a file")
+  .option("--token-stdin", "read the service token from stdin")
+  .action(async (provider: string, options: { token?: string; tokenFile?: string; tokenStdin?: boolean }) => {
     assertHubSpot(provider);
-    await loginHubSpot();
+    await loginHubSpot({
+      ...(options.token ? { token: options.token } : {}),
+      ...(options.tokenFile ? { tokenFile: options.tokenFile } : {}),
+      ...(options.tokenStdin ? { tokenStdin: true } : {}),
+    });
   });
 
 program

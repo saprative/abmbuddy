@@ -40,7 +40,7 @@ export class HubSpotProvider implements CRMProvider {
   async describe(): Promise<string> {
     const tokens = await readTokens();
     if (!tokens) return "not connected";
-    const mode = tokens.mode === "oauth" ? "OAuth" : "private app token";
+    const mode = tokens.mode === "oauth" ? "OAuth" : "service key / token";
     const portal = this.config.crm.portalId ? ` · portal ${this.config.crm.portalId}` : "";
     return `${mode}${portal}`;
   }

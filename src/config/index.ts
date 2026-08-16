@@ -31,8 +31,8 @@ export const configSchema = z.object({
   crm: z
     .object({
       provider: z.literal("hubspot").optional(),
-      /** "oauth" uses your own HubSpot app; "private-app" uses a pasted token. */
-      authMode: z.enum(["oauth", "private-app"]).optional(),
+      /** "token" is a service key or private app token; "oauth" is your own app. */
+      authMode: z.enum(["oauth", "token"]).optional(),
       clientId: z.string().optional(),
       redirectPort: z.number().int().min(1024).max(65535).default(8787),
       portalId: z.string().optional(),
