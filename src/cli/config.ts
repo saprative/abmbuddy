@@ -73,6 +73,11 @@ export async function showConfig(config: Config): Promise<void> {
       config.outreach.senderCompany ? ` · ${config.outreach.senderCompany}` : ""
     }`,
     `${label("Value prop")} ${config.outreach.valueProposition ?? pc.dim("not set")}`,
+    `${label("Agent skill")} ${
+      config.skills.installed.length
+        ? config.skills.installed.join(", ")
+        : pc.dim("not installed — run `abmbuddy skill install`")
+    }`,
     `${label("Secrets in")} ${(await usingKeychain()) ? "OS keychain" : "0600 file in config dir"}`,
     `${label("Config file")} ${pc.dim(configFile())}`,
     `${label("Prompt edits")} ${pc.dim(promptOverrideDir())}`,

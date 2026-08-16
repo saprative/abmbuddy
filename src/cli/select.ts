@@ -35,12 +35,12 @@ export async function selectAccounts(
 
   const companies = await loadCompanies(crm, query, options.limit);
   if (!companies.length) {
-    process.stdout.write(pc.yellow(`${symbols.warn} No companies matched.\n`));
+    process.stderr.write(pc.yellow(`${symbols.warn} No companies matched.\n`));
     return [];
   }
 
   if (options.all) {
-    process.stdout.write(`${companies.length} account(s) selected.\n`);
+    process.stderr.write(`${companies.length} account(s) selected.\n`);
     return companies;
   }
 
@@ -72,12 +72,12 @@ async function loadCompanies(
     onPage: (loaded) => {
       if (loaded - lastReported >= 100 && process.stdout.isTTY) {
         lastReported = loaded;
-        process.stdout.write(pc.dim(`  loaded ${loaded} accounts…\n`));
+        process.stderr.write(pc.dim(`  loaded ${loaded} accounts…\n`));
       }
     },
   });
   if (companies.length >= cap) {
-    process.stdout.write(
+    process.stderr.write(
       pc.yellow(
         `${symbols.warn} Stopped at ${cap} accounts. Narrow the filter, or raise the cap with --limit.\n`,
       ),
@@ -93,7 +93,7 @@ export async function confirmResearch(companies: Company[]): Promise<boolean> {
     .slice(0, 5)
     .map((company) => company.name)
     .join(", ");
-  process.stdout.write(
+  process.stderr.write(
     `\n${pc.bold(`${companies.length} account(s) selected.`)} ${pc.dim(
       truncate(preview + (companies.length > 5 ? `, +${companies.length - 5} more` : ""), 100),
     )}\n`,
@@ -116,7 +116,7 @@ export async function selectProduct(
   } catch (error) {
     // A portal with no product catalogue, or no scope to read it, should not
     // stop a research run.
-    process.stdout.write(pc.dim(`  Could not read products from HubSpot (${errorMessage(error)}).\n`));
+    process.stderr.write(pc.dim(`  Could not read products from HubSpot (${errorMessage(error)}).\n`));
     return undefined;
   }
 

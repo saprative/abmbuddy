@@ -1,4 +1,5 @@
 import { checkbox, select } from "@inquirer/prompts";
+import { loadConfig, updateConfig } from "../config/index.js";
 import { installSkill, removeSkill, type InstallResult } from "../skills/install.js";
 import { SKILL_TARGETS, defaultHome, type SkillScope } from "../skills/targets.js";
 import { pc, rule, symbols } from "./ui/theme.js";
@@ -83,8 +84,22 @@ export async function runSkillCommand(options: SkillCommandOptions): Promise<num
         ...(options.dryRun ? { dryRun: true } : {}),
       });
 
+  if (!options.dryRun) await rememberInstalled(results, Boolean(options.remove));
   report(results, Boolean(options.dryRun), Boolean(options.remove));
   return 0;
+}
+
+/** Keeps `abmbuddy config` honest about which agents were set up. */
+async function rememberInstalled(results: InstallResult[], removing: boolean): Promise<void> {
+  const touched = results
+    .filter((result) => result.action !== "missing")
+    .map((result) => result.target.id);
+  if (!touched.length) return;
+  const current = (await loadConfig(true)).skills.installed;
+  const next = removing
+    ? current.filter((id) => !touched.includes(id))
+    : [...new Set([...current, ...touched])].sort();
+  await updateConfig({ skills: { installed: next } });
 }
 
 function report(results: InstallResult[], dryRun: boolean, removing: boolean): void {
@@ -138,7 +153,9 @@ export async function offerSkillInstall(): Promise<void> {
       process.stdout.write(pc.dim("No coding agents detected on this machine. Skipping.\n"));
       return;
     }
-    report(await installSkill({ targets: detected, scope: "global", cwd, home }), false, false);
+    const results = await installSkill({ targets: detected, scope: "global", cwd, home });
+    await rememberInstalled(results, false);
+    report(results, false, false);
     return;
   }
   await runSkillCommand({ scope: "global" });

@@ -199,10 +199,17 @@ export async function researchAccount(input: Company, options: ResearchOptions):
   if (top && !options.skipStakeholders) {
     report("stakeholders", "Map stakeholders", "running", company);
     try {
-      // CRM contacts are optional context: a portal without contact access, or
-      // an ad-hoc domain run, still gets a public-only map.
+      // CRM contacts are optional context, but a portal that *cannot* be read
+      // is a blind spot the user has to know about — reporting "no contacts"
+      // for a permissions failure would state a fact we never established.
       if (options.loadContacts && company.id) {
-        contacts = await options.loadContacts(company).catch(() => []);
+        try {
+          contacts = await options.loadContacts(company);
+        } catch (error) {
+          warnings.push(
+            `CRM contacts unavailable, so the stakeholder map is public-only: ${errorMessage(error)}`,
+          );
+        }
       }
       const raw = await createStakeholderAgent(agentCtx).run({
         company,

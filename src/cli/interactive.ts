@@ -1,5 +1,5 @@
 import { input, select } from "@inquirer/prompts";
-import { isLlmConfigured, loadConfig } from "../config/index.js";
+import { isLlmConfigured, loadConfig, updateConfig } from "../config/index.js";
 import { resolveApiKey } from "../llm/provider.js";
 import type { LlmProviderName } from "../config/index.js";
 import { ensureLlmConfigured, runConfigCommand, showConfig } from "./config.js";
@@ -9,14 +9,30 @@ import { offerSkillInstall, runSkillCommand } from "./skill.js";
 import { pc, symbols } from "./ui/theme.js";
 
 /**
- * `npx abmbuddy` with no arguments. First run connects a CRM and a model;
- * after that it is a four-item menu that gets out of the way.
+ * `npx abmbuddy` with no arguments.
+ *
+ * Onboarding is three steps — CRM, model, coding agents — and each is skipped
+ * silently once it is done, so a returning user drops straight into the menu.
  */
 export async function runInteractive(): Promise<number> {
   banner();
 
-  let connected = await isHubSpotConnected();
-  if (!connected) {
+  const before = await loadConfig(true);
+  const needsCrm = !(await isHubSpotConnected());
+  const needsLlm =
+    !isLlmConfigured(before) || !(await resolveApiKey(before.llm.provider as LlmProviderName));
+  const needsSkill = !before.skills.offeredAt;
+  const steps = [needsCrm, needsLlm, needsSkill].filter(Boolean).length;
+  let step = 0;
+  const heading = (title: string): void => {
+    step += 1;
+    if (steps > 1) process.stdout.write(`\n${pc.dim(`Step ${step} of ${steps}`)}  ${pc.bold(title)}\n`);
+  };
+
+  // 1. CRM ----------------------------------------------------------------
+  let connected = !needsCrm;
+  if (needsCrm) {
+    heading("Connect your CRM");
     const choice = await select<"hubspot" | "skip">({
       message: "Connect CRM",
       choices: [
@@ -32,12 +48,21 @@ export async function runInteractive(): Promise<number> {
     process.stdout.write(`${pc.green(symbols.ok)} HubSpot connected\n`);
   }
 
-  const config = await loadConfig(true);
-  const firstRun = !isLlmConfigured(config) || !(await resolveApiKey(config.llm.provider as LlmProviderName));
-  if (firstRun) {
+  // 2. Model --------------------------------------------------------------
+  if (needsLlm) {
+    heading("Choose an AI provider");
     await ensureLlmConfigured();
-    // Only offered once, at the end of setup, and easy to decline.
+  }
+
+  // 3. Coding agents ------------------------------------------------------
+  if (needsSkill) {
+    heading("Set up your coding agents");
+    process.stdout.write(
+      pc.dim("  ABMBuddy can teach Claude Code, Codex, Antigravity and others to run it for you.\n"),
+    );
     await offerSkillInstall();
+    // Asked once. The menu still has it if the answer was "not now".
+    await updateConfig({ skills: { offeredAt: new Date().toISOString() } });
   }
 
   while (true) {

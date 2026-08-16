@@ -64,23 +64,33 @@ Requires **Node 20.11 or newer**. Check with `node --version`.
 npx abmbuddy
 ```
 
-First run walks you through setup:
+First run walks you through three steps. Each is skipped on later runs once it
+is done, so you drop straight into the menu.
 
 ```
 ABMBuddy
 Open-source agentic account research.
 
+Step 1 of 3  Connect your CRM
 ? Connect CRM
 ❯ HubSpot
   Skip for now (research a domain instead)
 
 ✓ Connected to HubSpot
 
+Step 2 of 3  Choose an AI provider
 ? AI Provider
 ❯ OpenAI
   Anthropic
   Google Gemini
   OpenAI Compatible
+
+Step 3 of 3  Set up your coding agents
+  ABMBuddy can teach Claude Code, Codex, Antigravity and others to run it for you.
+? Teach your coding agents to use ABMBuddy?
+❯ Yes — set up every agent found on this machine
+  Let me choose which agents
+  Not now
 ```
 
 Your API key is stored in your operating system's keychain — never in a file in
@@ -104,8 +114,11 @@ Settings. There is no app to build, no client secret, and no OAuth round trip.
    crm.objects.contacts.read   → stakeholder mapping against your CRM contacts
    e-commerce                  → reading your product catalogue
    ```
-   Without them ABMBuddy degrades gracefully: public-only stakeholders, and
-   your configured value proposition instead of a selected product.
+   (HubSpot also accepts `crm.objects.products.read` in place of `e-commerce`.)
+   Without them ABMBuddy degrades rather than failing — public-only
+   stakeholders, and your configured value proposition instead of a selected
+   product — and tells you which scope was missing instead of reporting an
+   empty result as a fact.
 3. **Update** → **Create**, then **Show** and **Copy** the key.
 4. Paste it when ABMBuddy asks.
 
@@ -147,7 +160,26 @@ abmbuddy login hubspot --token-file ./key.txt  # safer
 echo "$HUBSPOT_KEY" | abmbuddy login hubspot --token-stdin   # safest
 ```
 
-### 3. Choose what you are selling
+### 3. Set up your coding agents
+
+Onboarding offers this once. It installs an agent skill that teaches Claude
+Code, Codex, Antigravity and others how to drive ABMBuddy — so you can ask your
+agent to research an account instead of remembering flags.
+
+```
+? Which agents should get the ABMBuddy skill?  (a selects all)
+❯ ◉ Claude Code    found
+  ◉ Codex CLI      found
+  ◯ Antigravity
+  ◯ Cursor
+```
+
+Agents already on your machine are detected and pre-selected. Declining is
+fine — `abmbuddy skill install` does the same thing any time, and
+[the section below](#teach-your-coding-agent-to-use-it) covers what gets
+written where.
+
+### 4. Choose what you are selling
 
 When HubSpot is connected, ABMBuddy reads your **product catalogue** and asks
 which one this run is about:
@@ -165,7 +197,7 @@ keeps the collateral honest about what is actually on offer. It never invents a
 problem to match the pitch. Pass `--product "Deployment Platform"` to skip the
 prompt.
 
-### 4. Research some accounts
+### 5. Research some accounts
 
 After setup, every run is a short menu:
 
@@ -194,7 +226,7 @@ Pick **Research accounts**, filter, and select one, several, or all:
 ? Start deep research? (Y/n)
 ```
 
-### 5. Read the brief
+### 6. Read the brief
 
 ```
 DATADOG
@@ -314,48 +346,109 @@ npx abmbuddy research stripe.com datadoghq.com snowflake.com
 
 ## Command reference
 
-```bash
-abmbuddy                              # interactive
-abmbuddy login hubspot                # connect a CRM (service key, token or OAuth)
-abmbuddy login hubspot --token <key>  # non-interactive; also --token-file / --token-stdin
-abmbuddy logout hubspot               # disconnect and delete stored credentials
-abmbuddy research                     # pick accounts from HubSpot
-abmbuddy research stripe.com          # research a domain, no CRM needed
-abmbuddy research --hubspot --all     # every account in the portal
-abmbuddy research --query "fintech"   # filter the portal server-side
-abmbuddy research --json > out.json   # structured output for scripts
-abmbuddy research --product "Deploy"  # position the run around a HubSpot product
-abmbuddy research --save ./collateral # write generated one-pagers to disk
-abmbuddy skill install                # teach your coding agents to use the CLI
-abmbuddy config                       # view and change settings
-abmbuddy config --show                # print settings and exit
-abmbuddy --verbose research           # detailed logs on stderr
-```
+Everything ABMBuddy does, in one place.
 
-**`research` flags**
+### Global
+
+| | |
+| --- | --- |
+| `abmbuddy` | Interactive mode: onboarding on first run, then a menu |
+| `-v, --verbose` | Detailed logs to stderr (works on any command) |
+| `-V, --version` | Print the version |
+| `-h, --help` | Help for any command, e.g. `abmbuddy research --help` |
+
+### `abmbuddy research [targets...]`
+
+Research accounts from HubSpot, or domains directly.
+
+```bash
+abmbuddy research                              # pick accounts from HubSpot
+abmbuddy research stripe.com                   # one domain, no CRM needed
+abmbuddy research stripe.com datadoghq.com     # several at once
+abmbuddy research --hubspot --all --yes        # every account in the portal
+abmbuddy research --query "fintech" --limit 25
+abmbuddy research --product "Deployment Platform"
+abmbuddy research --json > accounts.json
+abmbuddy research --save ./collateral
+abmbuddy research --no-collateral --no-strategy # cheaper run
+abmbuddy research --hubspot --all --yes --write # non-interactive, saves to CRM
+```
 
 | Flag | Effect |
 | --- | --- |
 | `--hubspot` | Select accounts from the connected portal |
-| `--all` | Research everything matching the filter, no prompt |
-| `--query <text>` | Filter accounts by name or domain |
+| `--all` | Research everything matching the filter, without prompting |
+| `--query <text>` | Filter accounts by name or domain, server-side |
 | `--limit <n>` | Maximum accounts to load from the CRM (default 1000) |
 | `--concurrency <n>` | Accounts researched in parallel (default 4) |
-| `--json` | Machine-readable output instead of the brief |
-| `-y, --yes` | Answer prompts automatically (for scripts and CI) |
-| `--write` / `--no-write` | Force HubSpot write-back on or off |
-| `--no-outreach` | Skip the outreach agent |
-| `--no-stakeholders` / `--no-strategy` / `--no-collateral` | Skip the later stages for a cheaper run |
 | `--product <name>` | HubSpot product to position the run around |
+| `--json` | Structured JSON on stdout instead of the terminal brief |
+| `-y, --yes` | Answer every prompt automatically (scripts and CI) |
+| `--write` | Write results back to HubSpot without asking |
+| `--no-write` | Never write back |
 | `--save <dir>` | Write generated collateral into a directory as Markdown |
+| `--no-stakeholders` | Skip stakeholder mapping |
+| `--no-strategy` | Skip the approach strategy |
+| `--no-outreach` | Skip the outreach agent |
+| `--no-collateral` | Skip collateral generation |
 
-Non-interactive example:
+Exit code `0` when at least one account succeeded, `1` when all failed or the
+setup is incomplete.
+
+### `abmbuddy skill [install|remove]`
+
+Install the agent skill into your coding agents. Defaults to `install`.
 
 ```bash
-abmbuddy research --hubspot --all --yes --write --concurrency 3
+abmbuddy skill install                         # pick agents interactively
+abmbuddy skill install --all                   # every supported agent
+abmbuddy skill install --agents claude,codex
+abmbuddy skill install --project               # this repo only
+abmbuddy skill install --dry-run               # show what would be written
+abmbuddy skill remove --all                    # take it back out
 ```
 
----
+| Flag | Effect |
+| --- | --- |
+| `--agents <ids>` | Comma-separated: `claude`, `codex`, `antigravity`, `gemini`, `cursor`, `windsurf`, `copilot`, `agents` |
+| `--all` | Every agent supported for the chosen scope |
+| `--global` | Install for every project on this machine (default) |
+| `--project` | Install into the current project only |
+| `--dry-run` | Show what would be written, write nothing |
+| `-y, --yes` | No prompts |
+
+### `abmbuddy login [hubspot]`
+
+Connect a CRM. With no flags it is interactive and offers a service key, a
+private app token, or OAuth.
+
+```bash
+abmbuddy login hubspot                              # interactive
+abmbuddy login hubspot --token pat-na1-...          # visible in shell history
+abmbuddy login hubspot --token-file ./key.txt       # safer
+echo "$KEY" | abmbuddy login hubspot --token-stdin  # safest
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--token <token>` | Service key or private app token, non-interactive |
+| `--token-file <path>` | Read the token from a file |
+| `--token-stdin` | Read the token from stdin |
+
+### `abmbuddy logout [hubspot]`
+
+Disconnect the CRM and delete its stored credentials from the keychain.
+
+### `abmbuddy config`
+
+```bash
+abmbuddy config          # interactive: AI provider, search, outreach, research
+abmbuddy config --show   # print the current configuration and exit
+```
+
+Covers the AI provider and key, the web search provider, who outreach comes
+from and what you sell, research limits and concurrency, the SEC contact
+address, and where prompts and secrets live.
 
 ## What it actually does
 

@@ -70,6 +70,14 @@ export const configSchema = z.object({
       tone: z.enum(["direct", "consultative", "casual"]).default("direct"),
     })
     .prefault({}),
+  skills: z
+    .object({
+      /** When onboarding last offered to set up coding agents. Offered once. */
+      offeredAt: z.string().optional(),
+      /** Agent ids the skill was installed for, for `abmbuddy config`. */
+      installed: z.array(z.string()).default([]),
+    })
+    .prefault({}),
   hubspot: z
     .object({
       /** Write results back without asking, for non-interactive runs. */

@@ -45,6 +45,12 @@ const CONTACT_PROPERTIES = [
 
 const PAGE_SIZE = 100;
 
+/** The slice of a HubSpot collection response ABMBuddy actually reads. */
+type ObjectPage = {
+  results?: Array<{ id: string; properties?: Record<string, string | null> }>;
+  paging?: { next?: { after?: string } };
+};
+
 export class HubSpotProvider implements CRMProvider {
   readonly name = "hubspot";
   readonly label = "HubSpot";
@@ -74,24 +80,28 @@ export class HubSpotProvider implements CRMProvider {
 
     while (true) {
       if (options.signal?.aborted) break;
-      const page = options.query
-        ? await client.crm.companies.searchApi.doSearch({
-            query: options.query,
-            limit: PAGE_SIZE,
-            properties: READ_PROPERTIES,
-            ...(after ? { after } : {}),
-          })
-        : await client.crm.companies.basicApi.getPage(PAGE_SIZE, after, READ_PROPERTIES);
+      // Search and list return different generated types with the same shape
+      // for the fields we read.
+      const page = (await wrapCall("Could not read companies from HubSpot", async () =>
+        options.query
+          ? await client.crm.companies.searchApi.doSearch({
+              query: options.query,
+              limit: PAGE_SIZE,
+              properties: READ_PROPERTIES,
+              ...(after ? { after } : {}),
+            })
+          : await client.crm.companies.basicApi.getPage(PAGE_SIZE, after, READ_PROPERTIES),
+      )) as ObjectPage;
 
       for (const result of page.results ?? []) {
-        const company = toCompany(result.id, result.properties as Record<string, string | null>);
-        if (company) companies.push(company);
-      }
-      options.onPage?.(companies.length);
+      const company = toCompany(result.id, result.properties as Record<string, string | null>);
+      if (company) companies.push(company);
+    }
+    options.onPage?.(companies.length);
 
-      after = page.paging?.next?.after;
-      if (!after) break;
-      if (options.limit && companies.length >= options.limit) break;
+    after = page.paging?.next?.after;
+    if (!after) break;
+    if (options.limit && companies.length >= options.limit) break;
     }
 
     log.debug("hubspot", `loaded ${companies.length} companies`);
@@ -106,23 +116,25 @@ export class HubSpotProvider implements CRMProvider {
     const cap = options.limit ?? 300;
 
     while (products.length < cap) {
-      if (options.signal?.aborted) break;
-      const page = await client.crm.products.basicApi.getPage(PAGE_SIZE, after, PRODUCT_PROPERTIES);
-      for (const result of page.results ?? []) {
-        const properties = result.properties as Record<string, string | null> | undefined;
-        const name = properties?.name?.trim();
-        if (!name) continue;
-        products.push({
-          id: result.id,
-          name,
-          ...(properties?.description ? { description: properties.description } : {}),
-          ...(properties?.price ? { price: properties.price } : {}),
-          ...(properties?.hs_sku ? { sku: properties.hs_sku } : {}),
-          source: "hubspot",
-        });
-      }
-      after = page.paging?.next?.after;
-      if (!after) break;
+    if (options.signal?.aborted) break;
+    const page = await wrapCall("Could not read products from HubSpot", () =>
+      client.crm.products.basicApi.getPage(PAGE_SIZE, after, PRODUCT_PROPERTIES),
+    );
+    for (const result of page.results ?? []) {
+      const properties = result.properties as Record<string, string | null> | undefined;
+      const name = properties?.name?.trim();
+      if (!name) continue;
+      products.push({
+        id: result.id,
+        name,
+        ...(properties?.description ? { description: properties.description } : {}),
+        ...(properties?.price ? { price: properties.price } : {}),
+        ...(properties?.hs_sku ? { sku: properties.hs_sku } : {}),
+        source: "hubspot",
+      });
+    }
+    after = page.paging?.next?.after;
+    if (!after) break;
     }
 
     log.debug("hubspot", `loaded ${products.length} products`);
@@ -137,44 +149,41 @@ export class HubSpotProvider implements CRMProvider {
   async getContacts(companyId: string, options: ListOptions = {}): Promise<Contact[]> {
     const client = await this.api();
     const cap = options.limit ?? 50;
-    try {
-      const page = await client.crm.contacts.searchApi.doSearch({
-        limit: Math.min(cap, PAGE_SIZE),
-        properties: CONTACT_PROPERTIES,
-        filterGroups: [
-          {
-            filters: [{ propertyName: "associatedcompanyid", operator: "EQ", value: companyId }],
-          },
-        ],
-      } as Parameters<typeof client.crm.contacts.searchApi.doSearch>[0]);
+    // Deliberately not swallowed: a permissions failure that looks like "no
+    // contacts" would silently turn a blind spot into a stated fact.
+    const page = await wrapCall("Could not read contacts from HubSpot", () =>
+    client.crm.contacts.searchApi.doSearch({
+      limit: Math.min(cap, PAGE_SIZE),
+      properties: CONTACT_PROPERTIES,
+      filterGroups: [
+        {
+          filters: [{ propertyName: "associatedcompanyid", operator: "EQ", value: companyId }],
+        },
+      ],
+    } as Parameters<typeof client.crm.contacts.searchApi.doSearch>[0]),
+    );
 
-      const contacts: Contact[] = [];
-      for (const result of page.results ?? []) {
-        const properties = result.properties as Record<string, string | null> | undefined;
-        const name = [properties?.firstname, properties?.lastname]
-          .filter((part) => part?.trim())
-          .join(" ")
-          .trim();
-        if (!name) continue;
-        contacts.push({
-          id: result.id,
-          name,
-          ...(properties?.jobtitle ? { title: properties.jobtitle } : {}),
-          ...(properties?.job_function ? { function: properties.job_function } : {}),
-          ...(properties?.seniority ? { seniority: properties.seniority } : {}),
-          ...(properties?.hs_linkedin_url ? { linkedinUrl: properties.hs_linkedin_url } : {}),
-          ...(properties?.lifecyclestage ? { lifecycleStage: properties.lifecyclestage } : {}),
-          ...(properties?.notes_last_updated ? { lastActivityAt: properties.notes_last_updated.slice(0, 10) } : {}),
-        });
-      }
-      log.debug("hubspot", `loaded ${contacts.length} contacts for company ${companyId}`);
-      return contacts;
-    } catch (error) {
-      // A portal without contact read scope should degrade to public-only
-      // stakeholder mapping, not fail the account.
-      log.debug("hubspot", `contact lookup failed for ${companyId}: ${String(error)}`);
-      return [];
+    const contacts: Contact[] = [];
+    for (const result of page.results ?? []) {
+      const properties = result.properties as Record<string, string | null> | undefined;
+      const name = [properties?.firstname, properties?.lastname]
+        .filter((part) => part?.trim())
+        .join(" ")
+        .trim();
+      if (!name) continue;
+      contacts.push({
+        id: result.id,
+        name,
+        ...(properties?.jobtitle ? { title: properties.jobtitle } : {}),
+        ...(properties?.job_function ? { function: properties.job_function } : {}),
+        ...(properties?.seniority ? { seniority: properties.seniority } : {}),
+        ...(properties?.hs_linkedin_url ? { linkedinUrl: properties.hs_linkedin_url } : {}),
+        ...(properties?.lifecyclestage ? { lifecycleStage: properties.lifecyclestage } : {}),
+        ...(properties?.notes_last_updated ? { lastActivityAt: properties.notes_last_updated.slice(0, 10) } : {}),
+      });
     }
+    log.debug("hubspot", `loaded ${contacts.length} contacts for company ${companyId}`);
+    return contacts.slice(0, cap);
   }
 
   async updateCompany(companyId: string, result: AccountResearch): Promise<void> {
@@ -182,7 +191,9 @@ export class HubSpotProvider implements CRMProvider {
     await this.ensureProperties();
     const properties = buildProperties(result);
     log.debug("hubspot", `updating company ${companyId}`, Object.keys(properties));
-    await client.crm.companies.basicApi.update(companyId, { properties });
+    await wrapCall(`Could not update company ${companyId}`, () =>
+      client.crm.companies.basicApi.update(companyId, { properties }),
+    );
   }
 
   /**
@@ -286,18 +297,48 @@ function numeric(value: string | null | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/** Runs a HubSpot call, turning its exceptions into short, actionable errors. */
+async function wrapCall<T>(context: string, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    throw wrapError(error, context);
+  }
+}
+
 function isConflict(error: unknown): boolean {
   const code = (error as { code?: number })?.code;
   return code === 409;
 }
 
+/**
+ * HubSpot's SDK throws exceptions whose `message` is the status line, the whole
+ * response body and every response header. Surfaced as-is that is a wall of
+ * text in the terminal, so pull out the parts a user can act on: what went
+ * wrong, and which scopes were missing.
+ */
+export function describeHubSpotError(error: unknown): string {
+  const body = (error as { body?: { message?: string; category?: string; errors?: unknown[] } })?.body;
+  if (body?.message) {
+    const scopes = missingScopesFromError(body);
+    return scopes.length ? `${body.message.trim()} Missing scope: ${scopes.join(" or ")}.` : body.message.trim();
+  }
+  const raw = error instanceof Error ? error.message : String(error);
+  // Fall back to the first line, which is the status, rather than the dump.
+  const firstLine = raw.split("\n")[0]?.trim() ?? raw;
+  return firstLine.length > 200 ? `${firstLine.slice(0, 199)}…` : firstLine;
+}
+
+function missingScopesFromError(body: { errors?: unknown[] }): string[] {
+  const errors = (body.errors ?? []) as Array<{ context?: { requiredGranularScopes?: string[] } }>;
+  return errors.flatMap((entry) => entry.context?.requiredGranularScopes ?? []);
+}
+
 function wrapError(error: unknown, context: string): Error {
   const code = (error as { code?: number })?.code;
-  const message = (error as { body?: { message?: string } })?.body?.message ?? String(error);
+  const message = describeHubSpotError(error);
   if (code === 401 || code === 403) {
-    return new CrmAuthError(
-      `${context}: HubSpot denied the request (${message}). Check the connected app has the companies read/write and schema scopes.`,
-    );
+    return new CrmAuthError(`${context}: ${message}`);
   }
   return new Error(`${context}: ${message}`);
 }
