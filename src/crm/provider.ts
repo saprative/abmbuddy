@@ -1,4 +1,6 @@
 import type { Company } from "../models/company.js";
+import type { Contact } from "../models/contact.js";
+import type { Product } from "../models/product.js";
 import type { AccountResearch } from "../models/research.js";
 
 /**
@@ -15,11 +17,20 @@ export interface CRMProvider {
   connect(): Promise<void>;
   /** Every company the connected account can see, paginated internally. */
   getCompanies(options?: ListCompaniesOptions): Promise<Company[]>;
+  /** The product catalogue, so a run can be positioned around what you sell. */
+  getProducts(options?: ListOptions): Promise<Product[]>;
+  /** People already on an account, for stakeholder mapping. Never their contact details. */
+  getContacts(companyId: string, options?: ListOptions): Promise<Contact[]>;
   /** Writes a concise summary of a completed research run back to the record. */
   updateCompany(companyId: string, result: AccountResearch): Promise<void>;
   /** Human-readable connection detail for `abmbuddy config`. */
   describe(): Promise<string>;
 }
+
+export type ListOptions = {
+  limit?: number;
+  signal?: AbortSignal;
+};
 
 export type ListCompaniesOptions = {
   /** Stop after this many records. Undefined means "everything". */

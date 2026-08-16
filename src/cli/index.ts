@@ -48,6 +48,11 @@ program
   .option("--write", "write results back to HubSpot without asking")
   .option("--no-write", "never write results back to HubSpot")
   .option("--no-outreach", "skip the outreach agent")
+  .option("--no-stakeholders", "skip stakeholder mapping")
+  .option("--no-strategy", "skip the approach strategy")
+  .option("--no-collateral", "skip collateral generation")
+  .option("--product <name>", "HubSpot product to position this run around")
+  .option("--save <dir>", "write generated collateral into a directory as Markdown")
   .action(async (targets: string[], options: Record<string, unknown>) => {
     const code = await runResearch({
       ...(targets.length ? { targets } : {}),
@@ -62,6 +67,11 @@ program
       ...(options.write === false ? { write: false } : {}),
       ...(options.write === true ? { write: true } : {}),
       ...(options.outreach === false ? { noOutreach: true } : {}),
+      ...(options.stakeholders === false ? { noStakeholders: true } : {}),
+      ...(options.strategy === false ? { noStrategy: true } : {}),
+      ...(options.collateral === false ? { noCollateral: true } : {}),
+      ...(typeof options.product === "string" ? { product: options.product } : {}),
+      ...(typeof options.save === "string" ? { save: options.save } : {}),
     });
     process.exitCode = code;
   });

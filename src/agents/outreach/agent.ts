@@ -1,6 +1,7 @@
 import type { Config } from "../../config/index.js";
 import type { Company } from "../../models/company.js";
 import type { Evidence } from "../../models/evidence.js";
+import { describeProduct, type Product } from "../../models/product.js";
 import type { ExtractionResult } from "../extraction/schema.js";
 import type { Hypothesis } from "../hypothesis/schema.js";
 import type { Signal } from "../signals/schema.js";
@@ -17,6 +18,9 @@ export type OutreachInput = {
   hypothesis: Hypothesis;
   evidence: Evidence[];
   sender: Config["outreach"];
+  /** Who the message is aimed at, from the stakeholder map. */
+  recipient?: { who: string; role?: string; caresAbout?: string[] };
+  product?: Product;
 };
 
 export function createOutreachAgent(ctx: AgentContext): AgentDefinition<OutreachInput, OutreachResult> {
@@ -27,7 +31,7 @@ export function createOutreachAgent(ctx: AgentContext): AgentDefinition<Outreach
       schema: outreachSchema,
       temperature: 0.5,
       maxOutputTokens: 3000,
-      buildPrompt: ({ company, extraction, signals, hypothesis, evidence, sender }) =>
+      buildPrompt: ({ company, extraction, signals, hypothesis, evidence, sender, recipient, product }) =>
         [
           "# Company",
           renderCompany(company),
@@ -47,9 +51,18 @@ export function createOutreachAgent(ctx: AgentContext): AgentDefinition<Outreach
           "",
           "# Evidence catalogue (cite these ids)",
           renderEvidenceCatalog(evidence),
+          ...(recipient
+            ? [
+                "",
+                "# Who this is addressed to",
+                renderJson(recipient),
+                "Write to this person's remit. Do not name them if their name is not given.",
+              ]
+            : []),
           "",
           "# Sender",
           renderSender(sender),
+          ...(product ? ["", "# What is being offered", describeProduct(product) ?? product.name] : []),
           "",
           "# Task",
           "Write the outreach. Observation, possible implication, question.",

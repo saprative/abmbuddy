@@ -10,17 +10,19 @@ infrastructure.
 npx abmbuddy
 ```
 
-Connect HubSpot, pick accounts, and get evidence-backed account intelligence —
-what the company is doing publicly, what patterns that adds up to, what
-operational problem it might indicate, and a first message worth sending.
+Connect HubSpot, choose which product you are selling, pick accounts, and get
+evidence-backed account intelligence: what the company is doing publicly, what
+patterns that adds up to, what operational problem it might indicate, who to
+talk to about it, how to approach them, and the collateral to send.
 
 ABMBuddy is **not** a CRM. HubSpot owns companies, contacts, deals, properties
 and ownership. ABMBuddy owns the research process between "here is an account"
 and "here is something worth talking about", and writes a short summary back.
 
 ```
-HubSpot → select accounts → public research → evidence → signals
-        → hypotheses → outreach → HubSpot
+HubSpot → pick a product → select accounts → public research → evidence
+        → signals → hypotheses → stakeholders → approach → outreach
+        → collateral → HubSpot
 ```
 
 ---
@@ -97,6 +99,13 @@ Settings. There is no app to build, no client secret, and no OAuth round trip.
    crm.schemas.companies.read
    crm.schemas.companies.write
    ```
+   Two optional extras, each unlocking one feature:
+   ```
+   crm.objects.contacts.read   → stakeholder mapping against your CRM contacts
+   e-commerce                  → reading your product catalogue
+   ```
+   Without them ABMBuddy degrades gracefully: public-only stakeholders, and
+   your configured value proposition instead of a selected product.
 3. **Update** → **Create**, then **Show** and **Copy** the key.
 4. Paste it when ABMBuddy asks.
 
@@ -138,7 +147,25 @@ abmbuddy login hubspot --token-file ./key.txt  # safer
 echo "$HUBSPOT_KEY" | abmbuddy login hubspot --token-stdin   # safest
 ```
 
-### 3. Research some accounts
+### 3. Choose what you are selling
+
+When HubSpot is connected, ABMBuddy reads your **product catalogue** and asks
+which one this run is about:
+
+```
+? Which product are you positioning?
+❯ Deployment Platform — Ships models to production faster
+  Observability Suite
+  Data Governance Add-on
+  None — use my configured value proposition
+```
+
+The selected product ranks which well-supported hypothesis to lead with, and
+keeps the collateral honest about what is actually on offer. It never invents a
+problem to match the pitch. Pass `--product "Deployment Platform"` to skip the
+prompt.
+
+### 4. Research some accounts
 
 After setup, every run is a short menu:
 
@@ -167,7 +194,7 @@ Pick **Research accounts**, filter, and select one, several, or all:
 ? Start deep research? (Y/n)
 ```
 
-### 4. Read the brief
+### 5. Read the brief
 
 ```
 DATADOG
@@ -192,9 +219,34 @@ POTENTIAL BOTTLENECKS
    → Job posting: Senior ML Platform Engineer
      https://careers.datadoghq.com/...
 
+STAKEHOLDERS
+• Sam Okafor · CTO                                        economic buyer
+    Has spoken publicly about platform standardisation.
+• Platform engineering lead                                     champion
+    The open ML platform roles report into this function.
+
+Start with: Platform engineering lead — Closest to the observed problem.
+  ⚠ No procurement contact identified from public sources
+
+APPROACH
+Open with the platform lead on deployment throughput, then earn an
+introduction upward.
+
+1. Earn a reply · email · Platform engineering lead
+   When: Now
+2. Stay visible without repeating the ask · linkedin
+   When: Five working days after step 1, if no reply
+
+Walk away if:
+  - A hiring freeze, or an in-house platform team already at capacity
+
 RECOMMENDED OUTREACH
 Subject: scaling platform operations
 ...
+
+COLLATERAL
+Deployment throughput while the ML team doubles · personalized
+When ML hiring outpaces deployment tooling · reusable
 ```
 
 Then, if HubSpot is connected:
@@ -228,6 +280,8 @@ abmbuddy research stripe.com          # research a domain, no CRM needed
 abmbuddy research --hubspot --all     # every account in the portal
 abmbuddy research --query "fintech"   # filter the portal server-side
 abmbuddy research --json > out.json   # structured output for scripts
+abmbuddy research --product "Deploy"  # position the run around a HubSpot product
+abmbuddy research --save ./collateral # write generated one-pagers to disk
 abmbuddy config                       # view and change settings
 abmbuddy config --show                # print settings and exit
 abmbuddy --verbose research           # detailed logs on stderr
@@ -246,6 +300,9 @@ abmbuddy --verbose research           # detailed logs on stderr
 | `-y, --yes` | Answer prompts automatically (for scripts and CI) |
 | `--write` / `--no-write` | Force HubSpot write-back on or off |
 | `--no-outreach` | Skip the outreach agent |
+| `--no-stakeholders` / `--no-strategy` / `--no-collateral` | Skip the later stages for a cheaper run |
+| `--product <name>` | HubSpot product to position the run around |
+| `--save <dir>` | Write generated collateral into a directory as Markdown |
 
 Non-interactive example:
 
@@ -266,9 +323,16 @@ Company
    ↓ extraction agent          "what facts did we discover?"
    ↓ signal agent              "what patterns are visible?"
    ↓ hypothesis agent          "what operational problem might this indicate?"
-   ↓ outreach agent            "how should we start a conversation about it?"
+   ↓ stakeholder agent         "who would feel, fund, evaluate or block it?"
+   ↓ strategy agent            "how should we approach them, in what order?"
+   ↓ outreach agent            "how should we start the conversation?"
+   ↓ collateral agent          "what can we actually send?"
    ↓ display, then optionally update HubSpot
 ```
+
+That is seven model calls per account. Skip any of the later stages with
+`--no-stakeholders`, `--no-strategy`, `--no-outreach` or `--no-collateral` when
+you want a cheaper run.
 
 Accounts run concurrently (4 at a time by default). One collector failing never
 fails an account, and one account failing never stops the run:
@@ -302,7 +366,27 @@ runs when. Agents never call each other and never touch the network directly.
 - **Hypothesis** — works the chain *observed change → initiative → resources →
   operational implication → bottleneck*, and states the result as a
   possibility, never a fact.
-- **Outreach** — one real observation, one possible implication, one question.
+- **Stakeholders** — maps who would feel, fund, evaluate or block the problem,
+  combining CRM contacts with publicly identified people.
+- **Strategy** — the approach: entry point, a short sequence with one objective
+  per step, and the disqualifiers that would call it off.
+- **Outreach** — one real observation, one possible implication, one question,
+  addressed to whoever the approach starts with.
+- **Collateral** — a personalized one-pager for this account, plus a reusable
+  version with every account-specific fact removed.
+
+### Stakeholder mapping and your CRM contacts
+
+Stakeholder mapping reads the contacts already associated with the account and
+combines them with people identified in public evidence. Two standards of proof
+apply: a CRM stakeholder must point at a real contact record, and a publicly
+identified one must cite evidence. Anything satisfying neither is dropped as
+invention, and roles nobody was found for are reported as gaps rather than
+filled with plausible names.
+
+**Only names, titles and lifecycle fields are read.** Email addresses, phone
+numbers and message history are never requested from HubSpot, so they cannot
+reach a model or your terminal.
 
 ### Evidence rules
 
@@ -331,6 +415,9 @@ not exist, then writes six concise properties:
 | ABMBuddy Top Hypothesis | The strongest hypothesis, its reasoning and sources |
 | ABMBuddy Hypothesis Confidence | 0–100 |
 | ABMBuddy Outreach Angle | Observation, angle, opener and subject |
+| ABMBuddy Stakeholders | Who would feel, fund, evaluate or block it |
+| ABMBuddy Approach | Entry point and the planned sequence |
+| ABMBuddy Product | The product the research was positioned around |
 
 Scraped documents are never written to HubSpot. The raw evidence lives in memory
 for the duration of the run and is then gone.

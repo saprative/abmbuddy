@@ -1,13 +1,18 @@
+import { createCollateralAgent, pruneCollateral } from "../agents/collateral/agent.js";
 import { createExtractionAgent, pruneExtraction } from "../agents/extraction/agent.js";
 import { createHypothesisAgent, pruneHypotheses } from "../agents/hypothesis/agent.js";
 import { createOutreachAgent, pruneOutreach } from "../agents/outreach/agent.js";
 import { createSignalAgent, pruneSignals } from "../agents/signals/agent.js";
+import { createStakeholderAgent, pruneStakeholders } from "../agents/stakeholders/agent.js";
+import { createStrategyAgent, pruneStrategy } from "../agents/strategy/agent.js";
 import type { AgentContext } from "../agents/agent.js";
 import { createSources } from "../collectors/index.js";
 import { CollectorSkip, type CollectorContext, type ResearchSource } from "../collectors/types.js";
 import type { Config } from "../config/index.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { Company } from "../models/company.js";
+import type { Contact } from "../models/contact.js";
+import { describeProduct, type Product } from "../models/product.js";
 import type { Evidence } from "../models/evidence.js";
 import type { AccountResearch, CollectorReport } from "../models/research.js";
 import type { SearchProvider } from "../search/provider.js";
@@ -29,6 +34,14 @@ export type ResearchOptions = {
   onProgress?: ProgressHandler;
   /** Skip the outreach stage (research-only runs). */
   skipOutreach?: boolean;
+  /** Skip stakeholder mapping, approach strategy or collateral. */
+  skipStakeholders?: boolean;
+  skipStrategy?: boolean;
+  skipCollateral?: boolean;
+  /** The product this run is positioned around. */
+  product?: Product;
+  /** Supplies CRM contacts for stakeholder mapping. Optional by design. */
+  loadContacts?: (company: Company) => Promise<Contact[]>;
   /** Override the collector set — used by tests and by embedders. */
   sources?: ResearchSource[];
 };
@@ -121,6 +134,8 @@ export async function researchAccount(input: Company, options: ResearchOptions):
   }
 
   const agentCtx: AgentContext = { model: llm.model(), ...(signal ? { signal } : {}) };
+  const product = options.product;
+  const sellerContext = describeProduct(product, config.outreach.valueProposition);
 
   // 3. Extraction — what facts did we discover? ---------------------------
   report("extraction", "Extract evidence", "running", company);
@@ -159,7 +174,7 @@ export async function researchAccount(input: Company, options: ResearchOptions):
       extraction,
       signals,
       evidence,
-      ...(config.outreach.valueProposition ? { sellerContext: config.outreach.valueProposition } : {}),
+      ...(sellerContext ? { sellerContext } : {}),
     });
     const pruned = pruneHypotheses(raw, evidence, signals);
     hypotheses = pruned.hypotheses;
@@ -176,9 +191,74 @@ export async function researchAccount(input: Company, options: ResearchOptions):
     report("hypothesis", "Generate hypotheses", "failed", company, errorMessage(error));
   }
 
-  // 6. Outreach — how should we start the conversation? -------------------
-  let outreach: AccountResearch["outreach"];
   const top = hypotheses[0];
+
+  // 6. Stakeholders — who would feel, fund, evaluate or block it? ---------
+  let stakeholders: AccountResearch["stakeholders"];
+  let contacts: Contact[] = [];
+  if (top && !options.skipStakeholders) {
+    report("stakeholders", "Map stakeholders", "running", company);
+    try {
+      // CRM contacts are optional context: a portal without contact access, or
+      // an ad-hoc domain run, still gets a public-only map.
+      if (options.loadContacts && company.id) {
+        contacts = await options.loadContacts(company).catch(() => []);
+      }
+      const raw = await createStakeholderAgent(agentCtx).run({
+        company,
+        extraction,
+        signals,
+        hypothesis: top,
+        evidence,
+        contacts,
+        ...(product ? { product } : {}),
+      });
+      const pruned = pruneStakeholders(raw, evidence, contacts);
+      stakeholders = pruned.map;
+      warnings.push(...pruned.warnings);
+      report(
+        "stakeholders",
+        "Map stakeholders",
+        "ok",
+        company,
+        `${stakeholders.stakeholders.length} people${contacts.length ? ` · ${contacts.length} from CRM` : ""}`,
+      );
+    } catch (error) {
+      warnings.push(`Stakeholder mapping failed: ${errorMessage(error)}`);
+      report("stakeholders", "Map stakeholders", "failed", company, errorMessage(error));
+    }
+  } else if (!options.skipStakeholders) {
+    report("stakeholders", "Map stakeholders", "skipped", company, "no hypothesis to map against");
+  }
+
+  // 7. Strategy — how should we approach the account? ---------------------
+  let strategy: AccountResearch["strategy"];
+  if (top && stakeholders && !options.skipStrategy) {
+    report("strategy", "Plan approach", "running", company);
+    try {
+      const raw = await createStrategyAgent(agentCtx).run({
+        company,
+        hypothesis: top,
+        signals,
+        stakeholders,
+        evidence,
+        ...(product ? { product } : {}),
+        sender: config.outreach,
+      });
+      const pruned = pruneStrategy(raw, evidence);
+      strategy = pruned.strategy;
+      warnings.push(...pruned.warnings);
+      report("strategy", "Plan approach", "ok", company, `${strategy.sequence.length} steps`);
+    } catch (error) {
+      warnings.push(`Approach planning failed: ${errorMessage(error)}`);
+      report("strategy", "Plan approach", "failed", company, errorMessage(error));
+    }
+  } else if (!options.skipStrategy && top) {
+    report("strategy", "Plan approach", "skipped", company, "no stakeholder map");
+  }
+
+  // 8. Outreach — how should we start the conversation? -------------------
+  let outreach: AccountResearch["outreach"];
   if (options.skipOutreach) {
     report("outreach", "Generate outreach", "skipped", company, "disabled for this run");
   } else if (!top) {
@@ -186,6 +266,11 @@ export async function researchAccount(input: Company, options: ResearchOptions):
   } else {
     report("outreach", "Generate outreach", "running", company);
     try {
+      // Address whoever the approach plan chose to start with.
+      const entry = strategy?.entryPoint?.who ?? stakeholders?.entryPoint?.who;
+      const matched = stakeholders?.stakeholders.find(
+        (person) => entry && (person.name === entry || person.title === entry),
+      );
       const raw = await createOutreachAgent(agentCtx).run({
         company,
         extraction,
@@ -193,6 +278,16 @@ export async function researchAccount(input: Company, options: ResearchOptions):
         hypothesis: top,
         evidence,
         sender: config.outreach,
+        ...(entry
+          ? {
+              recipient: {
+                who: entry,
+                ...(matched?.title ? { role: matched.title } : {}),
+                ...(matched?.caresAbout?.length ? { caresAbout: matched.caresAbout } : {}),
+              },
+            }
+          : {}),
+        ...(product ? { product } : {}),
       });
       const pruned = pruneOutreach(raw, evidence);
       outreach = pruned.outreach;
@@ -204,6 +299,33 @@ export async function researchAccount(input: Company, options: ResearchOptions):
     }
   }
 
+  // 9. Collateral — what can we actually send? ---------------------------
+  let collateral: AccountResearch["collateral"];
+  if (top && !options.skipCollateral) {
+    report("collateral", "Generate collateral", "running", company);
+    try {
+      const raw = await createCollateralAgent(agentCtx).run({
+        company,
+        extraction,
+        signals,
+        hypothesis: top,
+        stakeholders: stakeholders ?? { stakeholders: [], gaps: [] },
+        evidence,
+        ...(product ? { product } : {}),
+        sender: config.outreach,
+      });
+      const pruned = pruneCollateral(raw, evidence);
+      collateral = pruned.collateral;
+      warnings.push(...pruned.warnings);
+      report("collateral", "Generate collateral", collateral ? "ok" : "warn", company);
+    } catch (error) {
+      warnings.push(`Collateral generation failed: ${errorMessage(error)}`);
+      report("collateral", "Generate collateral", "failed", company, errorMessage(error));
+    }
+  } else if (!options.skipCollateral) {
+    report("collateral", "Generate collateral", "skipped", company, "no hypothesis to write about");
+  }
+
   return {
     company,
     startedAt,
@@ -213,7 +335,12 @@ export async function researchAccount(input: Company, options: ResearchOptions):
     extraction,
     signals,
     hypotheses,
+    ...(stakeholders ? { stakeholders } : {}),
+    ...(strategy ? { strategy } : {}),
     ...(outreach ? { outreach } : {}),
+    ...(collateral ? { collateral } : {}),
+    ...(product ? { product } : {}),
+    ...(contacts.length ? { contacts } : {}),
     warnings,
   };
 }

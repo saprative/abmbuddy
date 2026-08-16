@@ -2,6 +2,7 @@ import { confirm } from "@inquirer/prompts";
 import { loadConfig } from "../config/index.js";
 import type { CRMProvider } from "../crm/provider.js";
 import { normalizeDomain, type Company } from "../models/company.js";
+import type { Product } from "../models/product.js";
 import type { AccountResearch, ResearchOutcome } from "../models/research.js";
 import { researchAccounts } from "../orchestrator/index.js";
 import { closeBrowser } from "../util/browser.js";
@@ -9,7 +10,7 @@ import { errorMessage } from "../util/logger.js";
 import { buildRuntime } from "./context.js";
 import { ensureLlmConfigured } from "./config.js";
 import { connectedHubSpot, isHubSpotConnected } from "./login.js";
-import { confirmResearch, selectAccounts } from "./select.js";
+import { confirmResearch, selectAccounts, selectProduct } from "./select.js";
 import { createProgressRenderer } from "./ui/progress.js";
 import { renderResearch, summarize } from "./ui/render.js";
 import { pc, rule, symbols } from "./ui/theme.js";
@@ -32,6 +33,14 @@ export type ResearchCommandOptions = {
   write?: boolean;
   /** Skip the outreach agent. */
   noOutreach?: boolean;
+  /** Skip the later stages, for cheaper runs. */
+  noStakeholders?: boolean;
+  noStrategy?: boolean;
+  noCollateral?: boolean;
+  /** Name or id of the HubSpot product to position this run around. */
+  product?: string;
+  /** Directory to write generated collateral into, as Markdown. */
+  save?: string;
 };
 
 export async function runResearch(options: ResearchCommandOptions): Promise<number> {
@@ -62,6 +71,19 @@ export async function runResearch(options: ResearchCommandOptions): Promise<numb
     if (interactive && !options.all && !(await confirmResearch(companies))) return 0;
   }
 
+  // The product being positioned comes from the CRM catalogue, so hypotheses
+  // are ranked — and collateral written — against something real.
+  let product: Product | undefined;
+  if (crm) {
+    product = await selectProduct(crm, {
+      ...(options.product ? { preset: options.product } : {}),
+      interactive,
+    });
+    if (product && !options.json) {
+      process.stdout.write(`${pc.dim("Positioning:")} ${product.name}\n`);
+    }
+  }
+
   // 2. Make sure we can actually run before spending anyone's time --------
   if (interactive) await ensureLlmConfigured();
   const runtime = await buildRuntime(options.concurrency ? { concurrency: options.concurrency } : {});
@@ -89,6 +111,12 @@ export async function runResearch(options: ResearchCommandOptions): Promise<numb
       search: runtime.search,
       signal: controller.signal,
       ...(options.noOutreach ? { skipOutreach: true } : {}),
+      ...(options.noStakeholders ? { skipStakeholders: true } : {}),
+      ...(options.noStrategy ? { skipStrategy: true } : {}),
+      ...(options.noCollateral ? { skipCollateral: true } : {}),
+      ...(product ? { product } : {}),
+      // Stakeholder mapping reads names and titles only — never contact details.
+      ...(crm ? { loadContacts: (company: Company) => crm.getContacts(company.id as string) } : {}),
       ...(progress ? { onProgress: progress.onProgress } : {}),
       onAccount: (outcome, input) => {
         if (!progress) return;
@@ -123,7 +151,12 @@ export async function runResearch(options: ResearchCommandOptions): Promise<numb
     }
   }
 
-  // 5. Offer to write back ------------------------------------------------
+  // 5. Optionally save the collateral as files ----------------------------
+  if (options.save && succeeded.length) {
+    await saveCollateral(options.save, succeeded.map((outcome) => outcome.research), options.json === true);
+  }
+
+  // 6. Offer to write back ------------------------------------------------
   const writable = succeeded.filter((outcome) => outcome.research.company.id);
   if (crm && writable.length) {
     const config = await loadConfig();
@@ -158,6 +191,29 @@ async function writeBack(crm: CRMProvider, results: AccountResearch[], quiet: bo
   if (!quiet && written) process.stdout.write(pc.dim(`\n${written} account(s) written back.\n`));
 }
 
+/** Writes generated collateral to disk as Markdown, one file per piece. */
+async function saveCollateral(dir: string, results: AccountResearch[], quiet: boolean): Promise<void> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  await mkdir(dir, { recursive: true });
+  let written = 0;
+  for (const research of results) {
+    if (!research.collateral) continue;
+    const slug =
+      research.company.domain?.replace(/[^a-z0-9]+/gi, "-") ??
+      research.company.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const files: Array<[string, string]> = [
+      [`${slug}-personalized.md`, research.collateral.personalized.body],
+      [`${slug}-general.md`, research.collateral.general.body],
+    ];
+    for (const [name, body] of files) {
+      await writeFile(join(dir, name), `${body.trim()}\n`, "utf8");
+      written += 1;
+    }
+  }
+  if (!quiet && written) process.stdout.write(pc.dim(`\n${written} collateral file(s) written to ${dir}\n`));
+}
+
 function toCompany(target: string): Company {
   const domain = normalizeDomain(target);
   return {
@@ -190,7 +246,11 @@ function toJson(outcomes: ResearchOutcome[]): unknown {
             extraction: outcome.research.extraction,
             signals: outcome.research.signals,
             hypotheses: outcome.research.hypotheses,
+            stakeholders: outcome.research.stakeholders,
+            strategy: outcome.research.strategy,
             outreach: outcome.research.outreach,
+            collateral: outcome.research.collateral,
+            product: outcome.research.product,
             warnings: outcome.research.warnings,
             startedAt: outcome.research.startedAt,
             finishedAt: outcome.research.finishedAt,

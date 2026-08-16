@@ -99,6 +99,57 @@ export function renderResearch(research: AccountResearch): string {
     out.push("");
   }
 
+  if (research.stakeholders?.stakeholders.length || research.stakeholders?.gaps.length) {
+    out.push(heading("Stakeholders"));
+    for (const person of research.stakeholders.stakeholders.slice(0, 6)) {
+      const who = person.name ?? person.title ?? "Unnamed role";
+      const title = person.name && person.title ? pc.dim(` · ${person.title}`) : "";
+      const origin = person.source === "crm" ? pc.cyan(" [CRM]") : "";
+      out.push(pad(`${symbols.bullet} ${who}${title}${origin}`, pc.dim(roleLabel(person.role))));
+      out.push(pc.dim(wrap(person.rationale, 4)));
+      if (person.caresAbout.length) {
+        out.push(pc.dim(wrap(`Cares about: ${person.caresAbout.join(" · ")}`, 4)));
+      }
+    }
+    if (research.stakeholders.entryPoint) {
+      out.push("");
+      out.push(
+        `${pc.dim("Start with:")} ${pc.bold(research.stakeholders.entryPoint.who)} ${pc.dim(
+          `— ${research.stakeholders.entryPoint.rationale}`,
+        )}`,
+      );
+    }
+    for (const gap of research.stakeholders.gaps.slice(0, 3)) {
+      out.push(pc.yellow(wrap(`${symbols.warn} ${gap}`, 2)));
+    }
+    out.push("");
+  }
+
+  if (research.strategy) {
+    out.push(heading("Approach"));
+    out.push(wrap(research.strategy.summary));
+    out.push("");
+    out.push(
+      `${pc.dim("Entry point:")} ${pc.bold(research.strategy.entryPoint.who)} ${pc.dim(
+        `— ${research.strategy.entryPoint.rationale}`,
+      )}`,
+    );
+    for (const step of research.strategy.sequence) {
+      out.push("");
+      out.push(`${step.step}. ${pc.bold(step.objective)} ${pc.dim(`· ${step.channel} · ${step.audience}`)}`);
+      out.push(pc.dim(wrap(step.message, 3)));
+      out.push(pc.dim(wrap(`When: ${step.timing}`, 3)));
+    }
+    if (research.strategy.disqualifiers.length) {
+      out.push("");
+      out.push(pc.dim("Walk away if:"));
+      for (const item of research.strategy.disqualifiers.slice(0, 3)) {
+        out.push(pc.dim(wrap(`- ${item}`, 2)));
+      }
+    }
+    out.push("");
+  }
+
   if (research.outreach) {
     out.push(heading("Recommended outreach"));
     out.push(`${pc.dim("Observation:")} ${wrap(research.outreach.observation, 0).trimStart()}`);
@@ -116,6 +167,26 @@ export function renderResearch(research: AccountResearch): string {
     out.push("");
   }
 
+  if (research.collateral) {
+    out.push(heading("Collateral"));
+    out.push(
+      `${pc.bold(research.collateral.personalized.title)} ${pc.dim(
+        `· personalized · ${research.collateral.personalized.audience}`,
+      )}`,
+    );
+    out.push(pc.dim(wrap(research.collateral.personalized.useWhen, 2)));
+    out.push(indent(research.collateral.personalized.body, 2));
+    out.push("");
+    out.push(
+      `${pc.bold(research.collateral.general.title)} ${pc.dim(
+        `· reusable · ${research.collateral.general.appliesTo}`,
+      )}`,
+    );
+    out.push(pc.dim(wrap(research.collateral.general.useWhen, 2)));
+    out.push(pc.dim(indent(firstLines(research.collateral.general.body, 8), 2)));
+    out.push("");
+  }
+
   out.push(renderSourceSummary(research));
   if (research.warnings.length) {
     out.push("");
@@ -126,6 +197,27 @@ export function renderResearch(research: AccountResearch): string {
   }
   out.push("");
   return out.join("\n");
+}
+
+function roleLabel(role: string): string {
+  return role.replace(/_/g, " ");
+}
+
+/** Preview of a longer document, keeping its paragraph breaks intact. */
+function firstLines(text: string, count: number): string {
+  const lines = text.trim().split("\n");
+  const head = lines.slice(0, count).join("\n");
+  return lines.length > count ? `${head}\n…` : head;
+}
+
+/** Keeps generated Markdown visually inside its section. */
+function indent(text: string, spaces: number): string {
+  const pad = " ".repeat(spaces);
+  return text
+    .trim()
+    .split("\n")
+    .map((line) => (line.trim() ? pad + line : line))
+    .join("\n");
 }
 
 function renderSourceSummary(research: AccountResearch): string {
@@ -175,6 +267,11 @@ export function summarize(research: AccountResearch): string {
     `${research.signals.length} signals`,
     `${research.hypotheses.length} hypotheses`,
   ];
+  if (research.stakeholders?.stakeholders.length) {
+    bits.push(`${research.stakeholders.stakeholders.length} stakeholders`);
+  }
+  if (research.strategy) bits.push("approach planned");
   if (research.outreach) bits.push("outreach ready");
+  if (research.collateral) bits.push("collateral ready");
   return bits.join(", ");
 }

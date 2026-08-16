@@ -3,6 +3,7 @@ import { input, password, select } from "@inquirer/prompts";
 import { loadConfig, updateConfig } from "../config/index.js";
 import {
   HUBSPOT_SCOPES,
+  OPTIONAL_SCOPES,
   REQUIRED_SCOPES,
   clearTokens,
   connectWithToken,
@@ -61,7 +62,9 @@ export async function loginHubSpot(options: LoginOptions = {}): Promise<void> {
         "1. HubSpot → Development → Keys → Service keys → Create service key",
         "2. Name it, then Add new scope and tick:",
         ...scopeLines,
-        "3. Update → Create, then Show and Copy the key.",
+        "3. Optional, each unlocking one feature:",
+        ...OPTIONAL_SCOPES.map(({ scope, unlocks }) => `     ${scope}${" ".repeat(Math.max(1, 28 - scope.length))}${pc.dim(unlocks)}`),
+        "4. Update → Create, then Show and Copy the key.",
         pc.dim("   Needs super admin, or the developer tools access permission."),
         "",
         pc.bold("No service keys in your portal?") + pc.dim("  Use a private app instead"),

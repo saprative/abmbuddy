@@ -33,6 +33,12 @@ export const HUBSPOT_SCOPES = [
 /** What a token must carry to be useful. "oauth" is an OAuth-only scope. */
 export const REQUIRED_SCOPES = HUBSPOT_SCOPES.filter((scope) => scope !== "oauth");
 
+/** Each unlocks one feature; without them ABMBuddy degrades rather than fails. */
+export const OPTIONAL_SCOPES: Array<{ scope: string; unlocks: string }> = [
+  { scope: "crm.objects.contacts.read", unlocks: "stakeholder mapping against your CRM contacts" },
+  { scope: "e-commerce", unlocks: "reading your product catalogue" },
+];
+
 /**
  * Scopes the token is missing. An empty list means it can do everything
  * ABMBuddy needs; an empty `granted` list means HubSpot did not tell us, so we

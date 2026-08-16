@@ -1,10 +1,12 @@
 import { Client } from "@hubspot/api-client";
 import type { Config } from "../config/index.js";
 import { normalizeDomain, type Company } from "../models/company.js";
+import type { Contact } from "../models/contact.js";
+import type { Product } from "../models/product.js";
 import type { AccountResearch } from "../models/research.js";
 import { log } from "../util/logger.js";
 import { getAccessToken, readTokens } from "./hubspot-auth.js";
-import { CrmAuthError, type CRMProvider, type ListCompaniesOptions } from "./provider.js";
+import { CrmAuthError, type CRMProvider, type ListCompaniesOptions, type ListOptions } from "./provider.js";
 import { PROPERTIES, PROPERTY_GROUP, buildProperties } from "./summary.js";
 
 /** The CRM fields ABMBuddy reads. Everything else stays HubSpot's business. */
@@ -19,6 +21,26 @@ const READ_PROPERTIES = [
   "numberofemployees",
   "annualrevenue",
   "linkedin_company_page",
+];
+
+/** Catalogue fields. Pricing is read for display only. */
+const PRODUCT_PROPERTIES = ["name", "description", "price", "hs_sku"];
+
+/**
+ * Contact fields for stakeholder mapping — who someone is and what they do.
+ * Email and phone are deliberately not requested: nothing that is not needed
+ * can be leaked to a model or printed to a terminal.
+ */
+const CONTACT_PROPERTIES = [
+  "firstname",
+  "lastname",
+  "jobtitle",
+  "hs_analytics_source",
+  "seniority",
+  "job_function",
+  "lifecyclestage",
+  "hs_linkedin_url",
+  "notes_last_updated",
 ];
 
 const PAGE_SIZE = 100;
@@ -74,6 +96,85 @@ export class HubSpotProvider implements CRMProvider {
 
     log.debug("hubspot", `loaded ${companies.length} companies`);
     return options.limit ? companies.slice(0, options.limit) : companies;
+  }
+
+  /** The product catalogue, so a run can be positioned around what you sell. */
+  async getProducts(options: ListOptions = {}): Promise<Product[]> {
+    const client = await this.api();
+    const products: Product[] = [];
+    let after: string | undefined;
+    const cap = options.limit ?? 300;
+
+    while (products.length < cap) {
+      if (options.signal?.aborted) break;
+      const page = await client.crm.products.basicApi.getPage(PAGE_SIZE, after, PRODUCT_PROPERTIES);
+      for (const result of page.results ?? []) {
+        const properties = result.properties as Record<string, string | null> | undefined;
+        const name = properties?.name?.trim();
+        if (!name) continue;
+        products.push({
+          id: result.id,
+          name,
+          ...(properties?.description ? { description: properties.description } : {}),
+          ...(properties?.price ? { price: properties.price } : {}),
+          ...(properties?.hs_sku ? { sku: properties.hs_sku } : {}),
+          source: "hubspot",
+        });
+      }
+      after = page.paging?.next?.after;
+      if (!after) break;
+    }
+
+    log.debug("hubspot", `loaded ${products.length} products`);
+    return products.slice(0, cap);
+  }
+
+  /**
+   * Contacts associated with a company. Uses the association property rather
+   * than the associations API because it pages cleanly and one request covers
+   * the whole account.
+   */
+  async getContacts(companyId: string, options: ListOptions = {}): Promise<Contact[]> {
+    const client = await this.api();
+    const cap = options.limit ?? 50;
+    try {
+      const page = await client.crm.contacts.searchApi.doSearch({
+        limit: Math.min(cap, PAGE_SIZE),
+        properties: CONTACT_PROPERTIES,
+        filterGroups: [
+          {
+            filters: [{ propertyName: "associatedcompanyid", operator: "EQ", value: companyId }],
+          },
+        ],
+      } as Parameters<typeof client.crm.contacts.searchApi.doSearch>[0]);
+
+      const contacts: Contact[] = [];
+      for (const result of page.results ?? []) {
+        const properties = result.properties as Record<string, string | null> | undefined;
+        const name = [properties?.firstname, properties?.lastname]
+          .filter((part) => part?.trim())
+          .join(" ")
+          .trim();
+        if (!name) continue;
+        contacts.push({
+          id: result.id,
+          name,
+          ...(properties?.jobtitle ? { title: properties.jobtitle } : {}),
+          ...(properties?.job_function ? { function: properties.job_function } : {}),
+          ...(properties?.seniority ? { seniority: properties.seniority } : {}),
+          ...(properties?.hs_linkedin_url ? { linkedinUrl: properties.hs_linkedin_url } : {}),
+          ...(properties?.lifecyclestage ? { lifecycleStage: properties.lifecyclestage } : {}),
+          ...(properties?.notes_last_updated ? { lastActivityAt: properties.notes_last_updated.slice(0, 10) } : {}),
+        });
+      }
+      log.debug("hubspot", `loaded ${contacts.length} contacts for company ${companyId}`);
+      return contacts;
+    } catch (error) {
+      // A portal without contact read scope should degrade to public-only
+      // stakeholder mapping, not fail the account.
+      log.debug("hubspot", `contact lookup failed for ${companyId}: ${String(error)}`);
+      return [];
+    }
   }
 
   async updateCompany(companyId: string, result: AccountResearch): Promise<void> {
