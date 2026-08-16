@@ -180,6 +180,7 @@ async function writeBack(crm: CRMProvider, results: AccountResearch[], quiet: bo
     if (!id) continue;
     try {
       await crm.updateCompany(id, research);
+      await crm.addTimelineNote(id, research);
       written += 1;
       if (!quiet) process.stdout.write(`${pc.green(symbols.ok)} ${research.company.name} updated in HubSpot\n`);
     } catch (error) {

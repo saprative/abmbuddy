@@ -8,6 +8,7 @@ import { log } from "../util/logger.js";
 import { getAccessToken, readTokens } from "./hubspot-auth.js";
 import { CrmAuthError, type CRMProvider, type ListCompaniesOptions, type ListOptions } from "./provider.js";
 import { PROPERTIES, PROPERTY_GROUP, buildProperties } from "./summary.js";
+import { buildTimelineNote } from "./timeline.js";
 
 /** The CRM fields ABMBuddy reads. Everything else stays HubSpot's business. */
 const READ_PROPERTIES = [
@@ -44,6 +45,9 @@ const CONTACT_PROPERTIES = [
 ];
 
 const PAGE_SIZE = 100;
+
+/** HubSpot-defined association: note -> company (189 is the reverse). */
+const NOTE_TO_COMPANY = 190;
 
 /** The slice of a HubSpot collection response ABMBuddy actually reads. */
 type ObjectPage = {
@@ -194,6 +198,42 @@ export class HubSpotProvider implements CRMProvider {
     await wrapCall(`Could not update company ${companyId}`, () =>
       client.crm.companies.basicApi.update(companyId, { properties }),
     );
+  }
+
+  /**
+   * Posts the research as a note on the company's activity timeline.
+   *
+   * Uses the raw endpoint rather than the generated client: the Notes v3
+   * contract (hs_timestamp plus a HUBSPOT_DEFINED association) is stable and
+   * documented, and this avoids depending on the generated shape.
+   */
+  async addTimelineNote(companyId: string, result: AccountResearch): Promise<void> {
+    const client = await this.api();
+    const response = await client.apiRequest({
+      method: "POST",
+      path: "/crm/v3/objects/notes",
+      body: {
+        properties: {
+          hs_timestamp: result.finishedAt,
+          hs_note_body: buildTimelineNote(result),
+        },
+        associations: [
+          {
+            to: { id: companyId },
+            types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: NOTE_TO_COMPANY }],
+          },
+        ],
+      },
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as { message?: string; errors?: unknown[] };
+      throw wrapError(
+        { code: response.status, body },
+        "Could not add a note to the account timeline",
+      );
+    }
+    log.debug("hubspot", `timeline note added to company ${companyId}`);
   }
 
   /**

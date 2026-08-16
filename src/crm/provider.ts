@@ -23,6 +23,8 @@ export interface CRMProvider {
   getContacts(companyId: string, options?: ListOptions): Promise<Contact[]>;
   /** Writes a concise summary of a completed research run back to the record. */
   updateCompany(companyId: string, result: AccountResearch): Promise<void>;
+  /** Posts the research to the account's activity timeline, where reps look. */
+  addTimelineNote(companyId: string, result: AccountResearch): Promise<void>;
   /** Human-readable connection detail for `abmbuddy config`. */
   describe(): Promise<string>;
 }
