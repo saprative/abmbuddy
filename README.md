@@ -386,6 +386,7 @@ abmbuddy research --hubspot --all --yes --write # non-interactive, saves to CRM
 | `-y, --yes` | Answer every prompt automatically (scripts and CI) |
 | `--write` | Write results back to HubSpot without asking |
 | `--no-write` | Never write back |
+| `--timeline` | Also post the research as a note on the account timeline |
 | `--save <dir>` | Write generated collateral into a directory as Markdown |
 | `--no-stakeholders` | Skip stakeholder mapping |
 | `--no-strategy` | Skip the approach strategy |
@@ -560,6 +561,26 @@ not exist, then writes six concise properties:
 Scraped documents are never written to HubSpot. The raw evidence lives in memory
 for the duration of the run and is then gone; each field is capped at 2,000
 characters so the record stays readable.
+
+### Timeline notes
+
+Properties are structured fields; a **timeline note** is what a rep actually
+reads on the record. `--timeline` posts one alongside the properties, and the
+interactive save prompt offers it:
+
+```
+? Save research to HubSpot (3 account(s))?
+❯ Properties and a timeline note
+  Properties only
+  No
+```
+
+The note carries the initiatives, signals with confidence, the top bottleneck
+and its reasoning chain, clickable evidence links, who to talk to, the approach
+and the opener — ending with an explicit line that bottlenecks are hypotheses to
+validate, not established facts, so the caveat survives into the CRM. If the
+note fails (usually a missing scope) the properties are still saved and you are
+told exactly what happened.
 
 The property group and its properties are created on first write-back if they
 do not exist, and reused afterwards — repeat runs update values in place rather

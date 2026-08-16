@@ -18,21 +18,21 @@ export const stakeholderRole = z.enum([
 
 export const stakeholderSchema = z.object({
   /** Omit rather than guess — an unnamed role is more useful than a wrong name. */
-  name: z.string().optional(),
-  title: z.string().optional(),
+  name: z.string().nullable(),
+  title: z.string().nullable(),
   role: stakeholderRole,
   /** Where this person came from. Drives how strictly the claim is checked. */
   source: z.enum(["crm", "public", "inferred"]),
   /** Set when this maps to a contact already on the account. */
-  crmContactId: z.string().optional(),
+  crmContactId: z.string().nullable(),
   /** Why they matter to this specific hypothesis, in one sentence. */
   rationale: z.string(),
   /** What this person is measured on, as far as the evidence shows. */
-  caresAbout: z.array(z.string()).default([]),
+  caresAbout: z.array(z.string()),
   /** The angle that would land with them specifically. */
-  angle: z.string().optional(),
+  angle: z.string().nullable(),
   /** Required for public and inferred entries; may be empty for CRM records. */
-  evidenceIds: z.array(z.string()).default([]),
+  evidenceIds: z.array(z.string()),
   confidence: z.number().min(0).max(1),
 });
 
@@ -47,11 +47,11 @@ export const stakeholderMapSchema = z.object({
       who: z.string(),
       rationale: z.string(),
     })
-    .optional(),
+    .nullable(),
   /** Roles nobody was found for — a known gap beats a fabricated name. */
   gaps: z
     .array(z.string())
-    .default([])
+    
     .describe("e.g. 'No economic buyer identified from public sources or the CRM'"),
 });
 

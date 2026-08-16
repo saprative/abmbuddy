@@ -156,3 +156,47 @@ test("service key scope checking reports gaps without blocking unknown scopes", 
     "crm.schemas.companies.write",
   ]);
 });
+
+test("the timeline note cites sources and keeps hypotheses hedged", async () => {
+  const { buildTimelineNote } = await import("../src/crm/timeline.ts");
+  resetEvidenceIds();
+  const evidence = [
+    makeEvidence({ sourceType: "job", title: 'ML Engineer <script>alert("x")</script>', url: "https://jobs.test/1", content: "x" }),
+  ];
+  const note = buildTimelineNote({
+    company: { id: "1", name: "Acme & Co", source: "hubspot" },
+    startedAt: "2026-01-01T00:00:00.000Z",
+    finishedAt: "2026-01-01T00:05:00.000Z",
+    collectors: [],
+    evidence,
+    extraction: {
+      strategicInitiatives: [{ statement: "Platform expansion", evidenceIds: ["ev_1"], confidence: 0.8 }],
+      recentDevelopments: [], operationalPriorities: [], technologyStack: [], engineeringInvestment: [],
+      hiringPatterns: [], leadershipStatements: [], metrics: [], knownProblems: [], coverageGaps: [],
+    },
+    signals: [],
+    hypotheses: [
+      {
+        title: "Deployment overhead",
+        hypothesis: "Hiring may be outpacing tooling.",
+        reasoning: {
+          observedChange: "7 roles", strategicInitiative: "Platform expansion",
+          resourcesCommitted: "Headcount", operationalImplication: "More models in production",
+          potentialBottleneck: "Deployment throughput",
+        },
+        validationQuestions: ["How long to production?"],
+        signalKeys: [], evidenceIds: ["ev_1"], confidence: 0.87,
+      },
+    ],
+    warnings: [],
+  });
+
+  // The evidence behind the claim is one click away.
+  assert.ok(note.includes('href="https://jobs.test/1"'));
+  // Untrusted text is escaped, never injected as markup.
+  assert.ok(!note.includes("<script>"));
+  assert.ok(note.includes("&amp; Co"));
+  // The caveat survives into the CRM, where a colleague reads it.
+  assert.ok(note.includes("hypotheses to validate"));
+  assert.ok(note.length < 65_536);
+});

@@ -8,7 +8,7 @@ export const outreachSchema = z.object({
   email: z
     .string()
     .describe("Plain text. Under 120 words. Observation -> possible implication -> question."),
-  linkedinMessage: z.string().max(700).optional(),
+  linkedinMessage: z.string().max(700).nullable(),
   conversationOpener: z
     .string()
     .describe("A single question a rep could open a live call with."),

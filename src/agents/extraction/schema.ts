@@ -19,11 +19,11 @@ const finding = z.object({
 
 export const extractionSchema = z.object({
   /** Where the company says it is going. */
-  strategicInitiatives: z.array(finding).default([]),
+  strategicInitiatives: z.array(finding),
   /** Things that happened recently: launches, acquisitions, funding, exec changes. */
-  recentDevelopments: z.array(finding).default([]),
+  recentDevelopments: z.array(finding),
   /** What the company is actively working on operationally right now. */
-  operationalPriorities: z.array(finding).default([]),
+  operationalPriorities: z.array(finding),
   /** Named technologies observed in evidence (job posts, engineering blog, filings). */
   technologyStack: z
     .array(
@@ -33,49 +33,49 @@ export const extractionSchema = z.object({
         mentions: z.number().int().min(1).describe("How many distinct evidence items mention it."),
       }),
     )
-    .default([]),
+    ,
   /** Observable investment in engineering: team growth, platform work, tooling. */
-  engineeringInvestment: z.array(finding).default([]),
+  engineeringInvestment: z.array(finding),
   /** Patterns across job postings, not summaries of individual listings. */
   hiringPatterns: z
     .array(
       z.object({
         pattern: z.string().describe("e.g. 'Concentrated hiring for ML platform roles'"),
         roleCount: z.number().int().min(0).describe("Roles observed supporting this pattern."),
-        functions: z.array(z.string()).default([]),
-        seniority: z.array(z.string()).default([]),
+        functions: z.array(z.string()),
+        seniority: z.array(z.string()),
         evidenceIds,
         confidence,
       }),
     )
-    .default([]),
+    ,
   /** Direct, quotable public statements from named leaders. */
   leadershipStatements: z
     .array(
       z.object({
         speaker: z.string(),
-        role: z.string().optional(),
+        role: z.string().nullable(),
         quote: z.string().describe("Verbatim or near-verbatim from the evidence."),
         topic: z.string(),
         evidenceIds,
       }),
     )
-    .default([]),
+    ,
   /** Numbers the company itself published. */
   metrics: z
     .array(
       z.object({
         label: z.string(),
         value: z.string(),
-        period: z.string().optional(),
+        period: z.string().nullable(),
         evidenceIds,
       }),
     )
-    .default([]),
+    ,
   /** Problems the company or its filings openly acknowledge. */
-  knownProblems: z.array(finding).default([]),
+  knownProblems: z.array(finding),
   /** What the evidence did NOT cover, so later stages know their blind spots. */
-  coverageGaps: z.array(z.string()).default([]),
+  coverageGaps: z.array(z.string()),
 });
 
 export type ExtractionResult = z.infer<typeof extractionSchema>;

@@ -1,4 +1,4 @@
-import { confirm } from "@inquirer/prompts";
+import { select } from "@inquirer/prompts";
 import { loadConfig } from "../config/index.js";
 import type { CRMProvider } from "../crm/provider.js";
 import { normalizeDomain, type Company } from "../models/company.js";
@@ -31,6 +31,8 @@ export type ResearchCommandOptions = {
   yes?: boolean;
   /** Force write-back on or off, overriding the prompt. */
   write?: boolean;
+  /** Also post the research as a note on the account timeline. */
+  timeline?: boolean;
   /** Skip the outreach agent. */
   noOutreach?: boolean;
   /** Skip the later stages, for cheaper runs. */
@@ -160,36 +162,81 @@ export async function runResearch(options: ResearchCommandOptions): Promise<numb
   const writable = succeeded.filter((outcome) => outcome.research.company.id);
   if (crm && writable.length) {
     const config = await loadConfig();
-    const shouldWrite =
-      options.write ??
-      (config.hubspot.autoWriteBack || options.yes
-        ? true
-        : interactive
-          ? await confirm({ message: `Save research to HubSpot (${writable.length} account(s))?`, default: true })
-          : false);
-    if (shouldWrite) await writeBack(crm, writable.map((outcome) => outcome.research), options.json === true);
+    // Three outcomes, not two: properties are structured fields, a timeline
+    // note is the thing a rep actually reads on the record.
+    let shouldWrite = options.write ?? config.hubspot.autoWriteBack;
+    let withNote = options.timeline ?? false;
+
+    if (options.write === undefined && interactive) {
+      const choice = await select<"both" | "properties" | "no">({
+        message: `Save research to HubSpot (${writable.length} account(s))?`,
+        choices: [
+          { name: "Properties and a timeline note", value: "both" },
+          { name: "Properties only", value: "properties" },
+          { name: "No", value: "no" },
+        ],
+      });
+      shouldWrite = choice !== "no";
+      withNote = choice === "both";
+    } else if (options.yes && options.write === undefined) {
+      shouldWrite = config.hubspot.autoWriteBack;
+    }
+
+    if (shouldWrite) {
+      await writeBack(
+        crm,
+        writable.map((outcome) => outcome.research),
+        options.json === true,
+        withNote,
+      );
+    }
   }
 
   return failed.length && !succeeded.length ? 1 : 0;
 }
 
-async function writeBack(crm: CRMProvider, results: AccountResearch[], quiet: boolean): Promise<void> {
+async function writeBack(
+  crm: CRMProvider,
+  results: AccountResearch[],
+  quiet: boolean,
+  withNote: boolean,
+): Promise<void> {
   let written = 0;
+  let noted = 0;
   for (const research of results) {
     const id = research.company.id;
     if (!id) continue;
     try {
       await crm.updateCompany(id, research);
-      await crm.addTimelineNote(id, research);
       written += 1;
       if (!quiet) process.stdout.write(`${pc.green(symbols.ok)} ${research.company.name} updated in HubSpot\n`);
     } catch (error) {
       process.stderr.write(
         `${pc.red(symbols.fail)} ${research.company.name}: could not update HubSpot — ${errorMessage(error)}\n`,
       );
+      continue;
+    }
+
+    if (!withNote) continue;
+    try {
+      await crm.addTimelineNote(id, research);
+      noted += 1;
+      if (!quiet) {
+        process.stdout.write(`${pc.green(symbols.ok)} ${research.company.name} note added to the timeline\n`);
+      }
+    } catch (error) {
+      // The properties are already saved. A missing notes scope is a partial
+      // result, not a failed write-back.
+      process.stderr.write(
+        `${pc.yellow(symbols.warn)} ${research.company.name}: properties saved, but the timeline note failed — ${errorMessage(error)}\n`,
+      );
     }
   }
-  if (!quiet && written) process.stdout.write(pc.dim(`\n${written} account(s) written back.\n`));
+  if (!quiet && written) {
+    process.stdout.write(
+      pc.dim(`\n${written} account(s) written back${noted ? `, ${noted} timeline note(s) added` : ""}.\n`),
+    );
+  }
 }
 
 /** Writes generated collateral to disk as Markdown, one file per piece. */

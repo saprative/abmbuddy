@@ -17,14 +17,14 @@ export const signalSchema = z.object({
     .describe("e.g. '14 ML job postings', '10-K discusses AI investment'"),
   direction: z
     .enum(["increasing", "steady", "decreasing"])
-    .default("increasing")
+    
     .describe("Direction of travel implied by the evidence."),
   evidenceIds: z.array(z.string()).min(1),
   confidence: z.number().min(0).max(1),
 });
 
 export const signalsSchema = z.object({
-  signals: z.array(signalSchema).default([]),
+  signals: z.array(signalSchema),
 });
 
 export type Signal = z.infer<typeof signalSchema>;

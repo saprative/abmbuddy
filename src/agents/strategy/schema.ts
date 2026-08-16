@@ -11,7 +11,7 @@ export const strategyStepSchema = z.object({
   message: z.string(),
   /** When to do it, relative to the previous step or to an external trigger. */
   timing: z.string(),
-  evidenceIds: z.array(z.string()).default([]),
+  evidenceIds: z.array(z.string()),
 });
 
 export const strategySchema = z.object({
@@ -26,16 +26,16 @@ export const strategySchema = z.object({
     .max(5)
     .describe("A short, ordered plan. Three steps beats five."),
   /** Public facts that make the approach credible when challenged. */
-  proofPoints: z.array(z.string()).default([]),
+  proofPoints: z.array(z.string()),
   /** What could make this land badly, and what to do about it. */
-  risks: z.array(z.string()).default([]),
+  risks: z.array(z.string()),
   /**
    * What would show this account is not worth pursuing. A strategy that cannot
    * be abandoned is a wish, not a plan.
    */
-  disqualifiers: z.array(z.string()).default([]),
+  disqualifiers: z.array(z.string()),
   /** What to confirm before investing more time. */
-  validationQuestions: z.array(z.string()).default([]),
+  validationQuestions: z.array(z.string()),
 });
 
 export type AccountStrategy = z.infer<typeof strategySchema>;

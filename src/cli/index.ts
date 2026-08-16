@@ -48,6 +48,7 @@ program
   .option("-y, --yes", "answer prompts automatically (non-interactive)")
   .option("--write", "write results back to HubSpot without asking")
   .option("--no-write", "never write results back to HubSpot")
+  .option("--timeline", "also post the research as a note on the account timeline")
   .option("--no-outreach", "skip the outreach agent")
   .option("--no-stakeholders", "skip stakeholder mapping")
   .option("--no-strategy", "skip the approach strategy")
@@ -67,6 +68,7 @@ program
       // commander sets write=false only when --no-write was passed.
       ...(options.write === false ? { write: false } : {}),
       ...(options.write === true ? { write: true } : {}),
+      ...(options.timeline ? { timeline: true } : {}),
       ...(options.outreach === false ? { noOutreach: true } : {}),
       ...(options.stakeholders === false ? { noStakeholders: true } : {}),
       ...(options.strategy === false ? { noStrategy: true } : {}),

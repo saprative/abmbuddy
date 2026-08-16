@@ -102,14 +102,14 @@ export function pruneStakeholders(
     kept.push({
       ...stakeholder,
       evidenceIds,
-      ...(crmContactId ? { crmContactId } : { crmContactId: undefined }),
+      ...(crmContactId ? { crmContactId } : { crmContactId: null }),
     });
   }
 
   return {
     map: {
       stakeholders: kept.sort((a, b) => b.confidence - a.confidence),
-      ...(result.entryPoint ? { entryPoint: result.entryPoint } : {}),
+      entryPoint: result.entryPoint ?? null,
       gaps: result.gaps ?? [],
     },
     warnings: reportWarnings(report, "stakeholders"),

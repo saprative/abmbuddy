@@ -90,42 +90,49 @@ export async function researchAccount(input: Company, options: ResearchOptions):
   const collectors: CollectorReport[] = [];
   const evidence: Evidence[] = [];
 
-  await Promise.all(
-    sources.map(async (source) => {
-      report(source.name, source.label, "running", company);
-      const startedMs = Date.now();
-      try {
-        const collected = await source.collect(company);
-        const durationMs = Date.now() - startedMs;
-        if (!collected.length) {
-          collectors.push({ name: source.name, status: "empty", evidenceCount: 0, durationMs });
-          report(source.name, source.label, "warn", company, "nothing found");
-          return;
-        }
-        evidence.push(...collected);
-        collectors.push({
-          name: source.name,
-          status: "ok",
-          evidenceCount: collected.length,
-          durationMs,
-        });
-        report(source.name, source.label, "ok", company, `${collected.length} items`);
-      } catch (error) {
-        const durationMs = Date.now() - startedMs;
-        const note = errorMessage(error);
-        if (error instanceof CollectorSkip) {
-          collectors.push({ name: source.name, status: "skipped", evidenceCount: 0, durationMs, note });
-          report(source.name, source.label, "skipped", company, note);
-          return;
-        }
-        // One collector failing never fails the account.
-        log.debug("orchestrator", `${source.name} failed for ${company.name}: ${note}`);
-        collectors.push({ name: source.name, status: "failed", evidenceCount: 0, durationMs, note });
-        report(source.name, source.label, "failed", company, note);
-        warnings.push(`${source.label} failed: ${note}`);
+  const websiteSource = sources.find((s) => s.name === "website");
+  const otherSources = sources.filter((s) => s.name !== "website");
+
+  const runSource = async (source: ResearchSource) => {
+    report(source.name, source.label, "running", company);
+    const startedMs = Date.now();
+    try {
+      const collected = await source.collect(company);
+      const durationMs = Date.now() - startedMs;
+      if (!collected.length) {
+        collectors.push({ name: source.name, status: "empty", evidenceCount: 0, durationMs });
+        report(source.name, source.label, "warn", company, "nothing found");
+        return;
       }
-    }),
-  );
+      evidence.push(...collected);
+      collectors.push({
+        name: source.name,
+        status: "ok",
+        evidenceCount: collected.length,
+        durationMs,
+      });
+      report(source.name, source.label, "ok", company, `${collected.length} items`);
+    } catch (error) {
+      const durationMs = Date.now() - startedMs;
+      const note = errorMessage(error);
+      if (error instanceof CollectorSkip) {
+        collectors.push({ name: source.name, status: "skipped", evidenceCount: 0, durationMs, note });
+        report(source.name, source.label, "skipped", company, note);
+        return;
+      }
+      // One collector failing never fails the account.
+      log.debug("orchestrator", `${source.name} failed for ${company.name}: ${note}`);
+      collectors.push({ name: source.name, status: "failed", evidenceCount: 0, durationMs, note });
+      report(source.name, source.label, "failed", company, note);
+      warnings.push(`${source.label} failed: ${note}`);
+    }
+  };
+
+  if (websiteSource) {
+    await runSource(websiteSource);
+  }
+
+  await Promise.all(otherSources.map(runSource));
 
   if (!evidence.length) {
     throw new ResearchError(
@@ -316,7 +323,7 @@ export async function researchAccount(input: Company, options: ResearchOptions):
         extraction,
         signals,
         hypothesis: top,
-        stakeholders: stakeholders ?? { stakeholders: [], gaps: [] },
+        stakeholders: stakeholders ?? { stakeholders: [], gaps: [], entryPoint: null },
         evidence,
         ...(product ? { product } : {}),
         sender: config.outreach,

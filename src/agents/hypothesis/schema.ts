@@ -17,7 +17,7 @@ export const hypothesisSchema = z.object({
   }),
   /** What would confirm or kill this in a first conversation. */
   validationQuestions: z.array(z.string()).min(1).max(3),
-  signalKeys: z.array(z.string()).default([]).describe("Keys of the signals this builds on."),
+  signalKeys: z.array(z.string()).describe("Keys of the signals this builds on."),
   evidenceIds: z.array(z.string()).min(1),
   confidence: z.number().min(0).max(1),
 });
